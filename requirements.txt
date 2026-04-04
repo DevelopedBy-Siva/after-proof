@@ -1,0 +1,8 @@
+google-cloud-aiplatform
+google-cloud-firestore
+google-cloud-storage
+flask
+pydantic
+python-dotenv
+pypdf2
+vertexai
