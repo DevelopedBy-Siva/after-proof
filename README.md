@@ -1,600 +1,1042 @@
-# Defendly — Comprehensive Build README
-### Hackathon Track: Build With AI — The Agentic Frontier
+# Defendly — Final Build README
+### Google Cloud Hackathon · Build With AI: The Agentic Frontier
 
 > **You can generate the assignment. You can't fake the defense.**
 
 ---
 
-## Table of Contents
+## The Problem
 
-1. [The Problem & Core Insight](#the-problem)
-2. [System Overview](#system-overview)
-3. [Full Tech Stack](#full-tech-stack)
-4. [Architecture & Agent Design](#architecture)
-5. [Database Schema](#database-schema)
-6. [API Design](#api-design)
-7. [Two-Person Task Split](#task-split)
-8. [Build Timeline (24 Hours)](#build-timeline)
-9. [Environment Setup](#environment-setup)
-10. [Gemini Prompts](#gemini-prompts)
-11. [Demo Script](#demo-script)
-12. [Judging Criteria Alignment](#judging-alignment)
+Students submit AI-generated work. Tutors know. Students know tutors know.
+Everyone is pretending — and the actual goal, *does the student understand the concept*, is lost entirely.
+
+**Defendly's answer:** Don't detect AI usage. Verify understanding.
+
+At the moment of submission, an agentic system reads the student's work, generates
+oral defense questions grounded in both the submission *and* the professor's rubric,
+conducts a live voice interrogation, and delivers a comprehension report to the instructor.
+
+The submission stops mattering. Understanding is the only thing that gets graded.
 
 ---
 
-## 1. The Problem & Core Insight <a name="the-problem"></a>
+## What We Deliberately Excluded
 
-**The situation:**
-Students submit AI-generated work. Tutors know. Students know tutors know. Everyone is pretending. The actual goal — *does the student understand the concept* — is completely lost in the charade.
-
-**The insight:**
-Don't detect AI usage. Verify understanding.
-
-**The solution:**
-At the moment of submission, every student is automatically asked to defend what they submitted. The tutor gets a comprehension score *alongside* the work. The submission becomes irrelevant. AI-written or not — doesn't matter. The only thing that matters is what happens in the 10 minutes after submit.
+| Excluded | Why |
+|----------|-----|
+| User auth / registration | Hardcoded prof login; students use unique token URLs |
+| Class / roster management UI | Hardcoded student list in config — not the demo's point |
+| Google Meet bot | Custom browser voice UI is faster to build and better to demo |
+| Email notifications | Google Calendar invite carries the link — that's enough |
+| Re-submission | One token, one submission, by design |
 
 ---
 
-## 2. System Overview <a name="system-overview"></a>
+## Core Flow (10 Steps)
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        DEFENDLY SYSTEM                          │
-│                                                                 │
-│  INSTRUCTOR                          STUDENT                    │
-│  Dashboard (React)                   Defense UI (React)         │
-│       │                                    │                    │
-│       └──────────────┬─────────────────────┘                    │
-│                      │                                          │
-│              Node.js API (Cloud Run)                            │
-│                      │                                          │
-│         ┌────────────┼────────────┐                             │
-│         │            │            │                             │
-│     Firestore    Google Drive   ADK Orchestrator                │
-│                                    │                            │
-│                     ┌──────────────┼──────────────┐             │
-│                  Agent 1       Agent 2-5        Agent 6         │
-│                 Analyst      Interrogation     Reporter         │
-│                     │         Pipeline            │             │
-│                  Vertex AI (Gemini 1.5 Pro)    Gmail/Calendar   │
-└─────────────────────────────────────────────────────────────────┘
+1.  Prof logs in (hardcoded creds)
+2.  Prof creates assignment:
+      - title, description, deadline, difficulty
+      - rubric (what concepts must be demonstrated)
+      - optional reference documents (PDFs, notes)
+3.  Google Calendar API sends each student a calendar invite
+      with their unique one-time submission link
+4.  Student opens link, uploads their assignment (PDF/doc)
+      → file saved to Google Cloud Storage
+      → submission metadata saved to Firestore
+5.  ADK pipeline triggers automatically:
+      Agent 1 (Analyst)   — Gemini reads the student's submission
+                            + the prof's assignment brief + rubric
+                            → extracts key concepts, claims, weak areas,
+                              methodology, and rubric alignment gaps
+      Agent 2 (Designer)  — Generates 3–5 oral questions that are:
+                            • specific to what the student wrote
+                            • constrained by the prof's rubric + topic scope
+                            • impossible to answer without understanding
+      Agent 3 (Evaluator) — Scores answers after defense,
+                            generates comprehension report
+6.  Student is notified: "Your defense session is ready"
+7.  Student enters live voice defense (browser):
+      - AI reads each question aloud (Cloud TTS)
+      - Student answers via microphone
+      - Real-time transcript appears on screen (Cloud STT)
+      - Agent probes vague answers with follow-up questions
+      - Entire session recorded → saved to GCS bucket
+8.  Session ends → Agent 3 evaluates all answers
+9.  Student sees their score + comprehension breakdown
+10. Student can voice-chat with AI tutor to understand where they went wrong
+    Prof dashboard shows all students: submission + score + full recording
 ```
-
-### Core Flow (10 steps)
-
-| Step | Action | Who/What |
-|------|--------|----------|
-| 1 | Instructor creates assignment + rubric + difficulty | Instructor Dashboard |
-| 2 | Students receive Gmail notification + Calendar deadline | Gmail API / Calendar API |
-| 3 | Student uploads via unique link | Student UI |
-| 4 | File stored in Google Drive, metadata in Firestore | Storage layer |
-| 5 | Submission Analyst reads full doc via Gemini long-context | Agent 1 |
-| 6 | Interrogation Designer generates 3–5 targeted questions | Agent 2 |
-| 7 | Google Calendar event + Meet link auto-created | Calendar API |
-| 8 | Interrogator conducts live voice defense (10 min) | Agent 3 + 4 |
-| 9 | Evaluator scores: conceptual clarity, logic, depth, confidence | Agent 5 |
-| 10 | Report + recording sent to instructor via Gmail | Agent 6 |
 
 ---
 
-## 3. Full Tech Stack <a name="full-tech-stack"></a>
+## Architecture Diagrams
 
-### Google Cloud (Core Infrastructure)
+<img src="arch.svg" alt="Alt text" width="700" />
+
+---
+
+<img src="flow.svg" alt="Alt text" width="700" />
+
+### Diagram 1 — System Structure (what lives where)
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  BROWSER  (React + Vite)                                            │
+│  ┌──────────────┐  ┌──────────────┐  ┌─────────────┐  ┌─────────┐ │
+│  │ Prof dashboard│  │Student pages │  │Score screen │  │AI tutor │ │
+│  │create assign. │  │submit+defense│  │report+breakdown│voice chat│ │
+│  └──────────────┘  └──────────────┘  └─────────────┘  └─────────┘ │
+└────────────────────────────┬────────────────────────────────────────┘
+                   REST + Socket.IO
+┌────────────────────────────▼────────────────────────────────────────┐
+│  NODE.JS API  (Cloud Run)                                           │
+│  ┌───────────┐  ┌────────────┐  ┌────────────────┐  ┌──────────┐  │
+│  │Assignments│  │Submissions │  │Defense session │  │ Reports  │  │
+│  │create,list│  │upload,token│  │Socket.IO,TTS,  │  │serve data│  │
+│  │tokens     │  │validate    │  │STT             │  │          │  │
+│  └───────────┘  └────────────┘  └────────────────┘  └──────────┘  │
+└─────────┬────────────────────────────────┬──────────────────────────┘
+    trigger pipeline                  read/write
+┌──────────▼────────────────┐   ┌──────────▼──────────────────────────┐
+│  ADK PIPELINE  (Cloud Run │   │  GOOGLE CLOUD SERVICES               │
+│  Python)                  │   │  ┌──────────────┐  ┌─────────────┐  │
+│  ┌─────────────────────┐  │   │  │Cloud Storage │  │  Firestore  │  │
+│  │Agent 1 — analyst    │  │   │  │submissions,  │  │all app state│  │
+│  │submission+rubric+   │  │   │  │recordings,   │  │             │  │
+│  │ref docs → Gemini    │  │   │  │ref docs      │  │             │  │
+│  └──────────┬──────────┘  │   │  └──────────────┘  └─────────────┘  │
+│             ▼             │   │  ┌──────────────┐  ┌─────────────┐  │
+│  ┌─────────────────────┐  │   │  │Calendar API  │  │  STT / TTS  │  │
+│  │Agent 2 — designer   │  │   │  │invites+links │  │voice pipeline│  │
+│  │questions grounded   │  │   │  └──────────────┘  └─────────────┘  │
+│  │in submission+rubric │  │   │  ┌────────────────────────────────┐  │
+│  └─────────────────────┘  │   │  │  Vertex AI — Gemini 1.5 Pro    │  │
+│  ┌─────────────────────┐  │   │  │  all reasoning: analysis,      │  │
+│  │Agent 3 — evaluator  │  │   │  │  questions, eval, tutor        │  │
+│  │scores + rubric      │  │   │  └────────────────────────────────┘  │
+│  │alignment report     │  │   └─────────────────────────────────────┘
+│  └─────────────────────┘  │
+└───────────────────────────┘
+```
+
+### Diagram 2 — End-to-End Data Flow
+
+```
+PHASE 1 — PROF SETUP
+  Prof creates assignment
+  (title, description, rubric, difficulty, deadline, optional ref docs)
+       ├──► Google Calendar API  →  calendar invite + unique token URL per student
+       └──► Firestore + GCS      →  assignment doc saved, ref doc files stored
+
+PHASE 2 — STUDENT SUBMISSION
+  Student opens token URL  →  sees assignment details + rubric
+  Student uploads PDF/doc
+       ├──► GCS bucket           →  submission file saved
+       └──► Firestore            →  submission doc, status = "analyzing"
+                                     pipeline trigger fired
+
+PHASE 3 — ADK AGENT PIPELINE  (Vertex AI — Gemini 1.5 Pro)
+  ┌─ Agent 1: Submission Analyst ──────────────────────────────────────┐
+  │  Inputs:  student submission + assignment brief + rubric + ref docs │
+  │  Output:  key concepts, claims, weak areas, rubric gaps, methodology│
+  └────────────────────────────────────────────────────────────────────┘
+                              ▼
+  ┌─ Agent 2: Interrogation Designer ──────────────────────────────────┐
+  │  Inputs:  analyst output + rubric + difficulty setting             │
+  │  Rules:   every question must be (a) specific to the submission    │
+  │           AND (b) relevant to the rubric/learning objectives       │
+  │  Output:  3–5 questions[], each with follow-up probe               │
+  └────────────────────────────────────────────────────────────────────┘
+  Firestore updated: questions[], status = "ready_for_defense"
+
+PHASE 4 — LIVE VOICE DEFENSE  (browser)
+  Cloud TTS speaks each question aloud
+  Student answers via microphone
+  Cloud STT transcribes in real time → transcript displayed live
+  Agent logic: vague answer → ask follow-up | good answer → next question
+  Full session recorded via MediaRecorder → uploaded to GCS bucket
+
+PHASE 5 — EVALUATION
+  ┌─ Agent 3: Comprehension Evaluator ─────────────────────────────────┐
+  │  Inputs:  transcript + voice signals + analysis + rubric           │
+  │  Output:  score 0–100, understands[], weak_in[], cannot_justify[], │
+  │           per-rubric verdict, recommendation                        │
+  └────────────────────────────────────────────────────────────────────┘
+  Report saved to Firestore
+
+PHASE 6 — RESULTS
+  Student:  score screen + comprehension breakdown + AI tutor (voice)
+  Prof:     dashboard → all students → report + recording playback
+```
+
+### Key architectural decision: the question generation intersection
+
+```
+        Student's submission
+               │
+               │  what they actually wrote
+               ▼
+        ┌─────────────┐
+        │  Agent 1    │ ─── extracts: concepts, claims,
+        │  Analyst    │            weak areas, rubric gaps
+        └──────┬──────┘
+               │
+               ▼
+        ┌─────────────┐◄── Professor's rubric + assignment brief
+        │  Agent 2    │    (what must be demonstrated to pass)
+        │  Designer   │
+        └──────┬──────┘
+               │
+        Questions that satisfy BOTH:
+        • grounded in what the student wrote  (no generic topic Qs)
+        • relevant to what the prof wanted tested  (no off-scope Qs)
+```
+
+---
+
+## The Question Generation Rule
+
+This is the core intellectual decision of the system.
+
+Questions are generated with **two inputs, both required:**
+
+**Input A — Student's submission** (what they actually wrote)
+Agent 1 extracts: key concepts used, specific claims made, methodology chosen,
+assumptions implied, weak or unsubstantiated sections.
+
+**Input B — Professor's context** (what the assignment was actually about)
+Includes: assignment description, learning objectives, rubric criteria,
+any reference documents or notes the prof uploaded.
+
+**The intersection is where questions come from.**
+
+A question is only valid if it satisfies both:
+- It references something *specific* in the student's submission (not generic topic questions)
+- It is *relevant* to the rubric and learning objectives the prof defined
+
+Example: Prof asks for an essay on gradient descent. Student submits an essay that
+mentions "we set learning rate to 0.01." The rubric says "must justify hyperparameter choices."
+A valid question: *"You chose a learning rate of 0.01 in your submission — what would happen
+to convergence if you used 0.1 instead?"*
+An invalid question: *"What is gradient descent?"* (generic, not grounded in their work)
+An invalid question: *"Explain backpropagation"* (not in rubric scope, not in their submission)
+
+---
+
+## Tech Stack
+
+### Google Cloud
 
 | Service | Purpose |
 |---------|---------|
-| **Vertex AI — Gemini 1.5 Pro** | Long-context document analysis, question generation, response evaluation |
-| **Agent Development Kit (ADK)** | Multi-agent orchestration and A2A communication |
-| **Cloud Run** | Serverless backend deployment (Node.js + Python) |
-| **Firestore** | Session state, submission metadata, reports, agent outputs |
-| **Cloud Storage / Google Drive** | Submission file storage |
-| **Speech-to-Text API** | Real-time voice transcription during defense |
-| **Cloud Logging / Monitoring** | Agent pipeline observability |
+| Vertex AI — Gemini 1.5 Pro | All AI reasoning: document analysis, question generation, answer evaluation, AI tutor |
+| Agent Development Kit (ADK) | Multi-agent orchestration, A2A communication |
+| Cloud Run | Hosts Node.js API + Python agent service |
+| Cloud Storage (GCS) | Student submission files, reference documents, session recordings |
+| Firestore | All application state |
+| Cloud Speech-to-Text | Transcribes student voice in real time |
+| Cloud Text-to-Speech | AI speaks questions and tutor responses aloud |
+| Google Calendar API | Sends assignment invites with unique student links |
 
-### Google Workspace Integration
+### Backend — Node.js (Express on Cloud Run)
 
-| Service | Purpose |
+| Package | Purpose |
 |---------|---------|
-| **Gmail API** | Assignment notifications, report delivery |
-| **Google Calendar API** | Defense session scheduling, deadline events |
-| **Google Meet** | Live voice defense session (Meet link generated) |
-| **Google Drive API** | Submission storage and retrieval |
+| `express` | REST API |
+| `socket.io` | Real-time defense session |
+| `firebase-admin` | Firestore access |
+| `googleapis` | Calendar API |
+| `@google-cloud/storage` | GCS file operations |
+| `@google-cloud/speech` | STT streaming |
+| `@google-cloud/text-to-speech` | TTS synthesis |
+| `multer` | File upload handling |
+| `uuid` | Token generation |
 
-### Backend
+### Agent Service — Python (ADK on Cloud Run)
 
-| Tech | Purpose |
-|------|---------|
-| **Node.js (Express)** | REST API server on Cloud Run |
-| **Python microservice** | ADK agent orchestration (Cloud Run) |
-| **Firebase Admin SDK** | Firestore operations |
-| **Google APIs Node.js client** | Workspace integrations |
-| **Socket.IO** | Real-time defense session state updates |
+| Package | Purpose |
+|---------|---------|
+| `google-adk` | Agent framework |
+| `google-cloud-aiplatform` | Vertex AI / Gemini API |
+| `google-cloud-firestore` | Read/write pipeline state |
+| `google-cloud-storage` | Fetch submission files |
+| `pydantic` | Typed agent I/O schemas |
+| `pypdf2` | Extract text from PDF submissions |
 
-### Frontend
+### Frontend — React + Vite
 
-| Tech | Purpose |
-|------|---------|
-| **React + Vite** | SPA for instructor dashboard and student defense UI |
-| **TailwindCSS** | Styling |
-| **React Query** | API state management |
-| **Web Speech API** | Browser-side voice capture during defense |
+| Package | Purpose |
+|---------|---------|
+| `react` + `vite` | SPA framework |
+| `tailwindcss` | Styling |
+| `react-router-dom` | Page routing |
+| `@tanstack/react-query` | API state + polling |
+| `axios` | HTTP client |
+| `socket.io-client` | Defense session real-time |
+| Web Speech API (browser native) | Mic capture + live transcript |
+| MediaRecorder API (browser native) | Full session recording |
 
 ---
 
-## 4. Architecture & Agent Design <a name="architecture"></a>
-
-### Agent Pipeline (ADK — Python)
+## Project File Structure
 
 ```
-Submission
-    │
-    ▼
-┌──────────────────────────────────────┐
-│  Agent 1: Submission Analyst         │
-│  - Input: file from Drive            │
-│  - Tool: Gemini 1.5 Pro (long ctx)   │
-│  - Output: key_concepts[], weak_areas│
-│            methodology, claims       │
-└──────────────┬───────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────┐
-│  Agent 2: Interrogation Designer     │
-│  - Input: analyst output + difficulty│
-│  - Tool: Gemini                      │
-│  - Output: questions[] (3-5)         │
-│    each tied to a submission section │
-└──────────────┬───────────────────────┘
-               │    ├──► Calendar API (creates Meet)
-               ▼
-┌──────────────────────────────────────┐
-│  Agent 3: Interrogator               │
-│  - Input: questions[], student voice │
-│  - Tool: Speech-to-Text + Gemini     │
-│  - Behavior: asks → listens →        │
-│    decides to probe / clarify / next │
-└──────────────┬───────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────┐
-│  Agent 4: Voice Analysis             │
-│  - Input: audio stream               │
-│  - Detects: hesitation, filler words │
-│    confidence level, response latency│
-│  - Output: voice_signals{}           │
-└──────────────┬───────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────┐
-│  Agent 5: Understanding Evaluator    │
-│  - Input: transcripts + voice_signals│
-│  - Scores: clarity, logic, depth,    │
-│    justification, confidence         │
-│  - Detects: shallow answers, bluffing│
-│  - Output: comprehension_report{}    │
-└──────────────┬───────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────┐
-│  Agent 6: Report Generator           │
-│  - Builds structured instructor doc  │
-│  - Sends via Gmail                   │
-│  - Stores in Firestore               │
-└──────────────────────────────────────┘
-```
-
-### A2A Communication (ADK)
-
-Each agent is a separate ADK `Agent` class with defined tools and a handoff protocol. The orchestrator manages the pipeline state in Firestore and passes structured JSON between agents.
-
-```python
-# Example agent handoff (ADK pattern)
-class SubmissionAnalystAgent(Agent):
-    tools = [gemini_analyze_tool, drive_fetch_tool]
-    output_schema = AnalystOutput  # Pydantic model
-
-class InterrogationDesignerAgent(Agent):
-    tools = [gemini_question_gen_tool]
-    input_schema = AnalystOutput
-    output_schema = QuestionSet
+defendly/
+│
+├── frontend/                          ← Person B owns this
+│   ├── src/
+│   │   ├── pages/
+│   │   │   ├── ProfLogin.jsx          hardcoded creds check, sets session flag
+│   │   │   ├── ProfDashboard.jsx      assignment creator + student overview
+│   │   │   ├── StudentLanding.jsx     token validation, assignment details, upload
+│   │   │   ├── DefenseSession.jsx     live voice defense UI
+│   │   │   ├── ScoreScreen.jsx        comprehension result + breakdown
+│   │   │   └── AITutor.jsx            post-defense voice chat
+│   │   ├── components/
+│   │   │   ├── VoiceWave.jsx          animated mic waveform (CSS only)
+│   │   │   ├── ScoreCard.jsx          understands / weak / cannot justify sections
+│   │   │   ├── Timer.jsx              countdown, turns amber → red
+│   │   │   ├── TranscriptFeed.jsx     live STT text appearing during defense
+│   │   │   └── RecordingPlayer.jsx    playback in prof dashboard
+│   │   └── lib/
+│   │       ├── api.js                 axios instance, all endpoint calls
+│   │       ├── socket.js              socket.io client setup
+│   │       └── mockData.js            mock responses for offline dev (Person B)
+│
+├── backend/                           ← Person A owns this
+│   ├── routes/
+│   │   ├── assignments.js             POST /api/assignments
+│   │   │                              GET  /api/assignments
+│   │   ├── submissions.js             GET  /api/submit/:token
+│   │   │                              POST /api/submit/:token
+│   │   │                              GET  /api/submit/:token/status
+│   │   └── reports.js                 GET  /api/report/:sessionId
+│   ├── services/
+│   │   ├── calendar.js                Google Calendar invite sender
+│   │   ├── storage.js                 GCS upload + signed URL generator
+│   │   ├── tts.js                     text → audio (Cloud TTS)
+│   │   ├── stt.js                     audio → transcript (Cloud STT)
+│   │   └── pipeline.js                HTTP call to ADK service to start pipeline
+│   ├── socket/
+│   │   └── defenseSession.js          Socket.IO: question flow, answer capture,
+│   │                                  recording finalization, eval trigger
+│   ├── config.js                      PROF + STUDENTS hardcoded here
+│   └── index.js
+│
+├── agents/                            ← Person A owns this
+│   ├── orchestrator.py                main pipeline runner, Firestore state machine
+│   ├── analyst.py                     Agent 1 — submission + assignment analysis
+│   ├── designer.py                    Agent 2 — question generation
+│   ├── evaluator.py                   Agent 3 — comprehension scoring + report
+│   ├── prompts.py                     all Gemini prompt templates
+│   ├── schemas.py                     Pydantic models for all agent I/O
+│   └── main.py                        Flask endpoint POST /run-pipeline
+│
+└── .env
 ```
 
 ---
 
-## 5. Database Schema <a name="database-schema"></a>
-
-### Firestore Collections
+## Firestore Schema
 
 ```
-/classes/{classId}
-  - instructorId: string
-  - name: string
-  - studentIds: string[]
-  - createdAt: timestamp
-
 /assignments/{assignmentId}
-  - classId: string
-  - title: string
-  - description: string
-  - rubric: string
-  - difficulty: "easy" | "medium" | "hard"
-  - deadline: timestamp
-  - createdAt: timestamp
+  title:            string
+  description:      string          ← shown to student on submission page
+  rubric:           string          ← learning objectives, what must be demonstrated
+  referenceDocsGcs: string[]        ← GCS URLs of any prof-uploaded reference files
+  difficulty:       "easy" | "medium" | "hard"
+  deadline:         timestamp
+  createdAt:        timestamp
+  studentTokens:    {
+    [token: string]: {
+      name:  string
+      email: string
+      used:  boolean
+    }
+  }
 
 /submissions/{submissionId}
-  - assignmentId: string
-  - studentId: string
-  - driveFileId: string
-  - status: "submitted" | "analyzing" | "awaiting_defense" | "defended" | "complete"
-  - submittedAt: timestamp
+  assignmentId:     string
+  studentToken:     string
+  studentName:      string
+  gcsFileUrl:       string          ← uploaded submission
+  status:           "uploaded" | "analyzing" | "ready_for_defense" | "defending" | "complete"
+  analysis:         AnalystOutput   ← filled by Agent 1
+  questions:        Question[]      ← filled by Agent 2
+  createdAt:        timestamp
 
 /defense_sessions/{sessionId}
-  - submissionId: string
-  - studentId: string
-  - meetLink: string
-  - questions: Question[]
-  - transcripts: Transcript[]
-  - voiceSignals: VoiceSignals
-  - status: "scheduled" | "in_progress" | "complete"
-  - recordingUrl: string
-  - scheduledAt: timestamp
+  submissionId:     string
+  studentName:      string
+  status:           "active" | "complete"
+  transcript:       [               ← filled turn by turn during defense
+    {
+      questionIndex: number
+      questionText:  string
+      answerText:    string
+      followUpAsked: boolean
+      voiceSignals:  { hesitationCount, fillerWordCount, avgLatencyMs, confidenceScore }
+    }
+  ]
+  recordingGcsUrl:  string          ← uploaded at session end
+  startedAt:        timestamp
+  endedAt:          timestamp
 
 /reports/{reportId}
-  - sessionId: string
-  - submissionId: string
-  - studentId: string
-  - comprehensionScore: number  // 0-100
-  - understands: string[]
-  - weak: string[]
-  - cannotJustify: string[]
-  - fullTranscript: string
-  - generatedAt: timestamp
+  sessionId:        string
+  submissionId:     string
+  assignmentId:     string
+  studentName:      string
+  overallScore:     number          ← 0–100
+  understands:      string[]        ← concepts clearly grasped
+  weakIn:           string[]        ← surface-level knowledge
+  cannotJustify:    string[]        ← claims they could not defend
+  rubricAlignment:  {               ← per-rubric-criterion verdict
+    criterion: string
+    verdict: "demonstrated" | "partial" | "not demonstrated"
+  }[]
+  recommendation:   string          ← one of three verdicts (see Evaluator prompt)
+  summary:          string          ← 2-sentence plain English for prof
+  generatedAt:      timestamp
 ```
 
 ---
 
-## 6. API Design <a name="api-design"></a>
-
-### REST Endpoints (Node.js / Express)
+## API Reference
 
 ```
-# Auth
-POST   /api/auth/google          - OAuth2 login
+# Assignment management
+POST  /api/assignments
+      body: { title, description, rubric, difficulty, deadline,
+               referenceDocUrls[] (optional GCS paths) }
+      → creates assignment, generates student tokens, sends Calendar invites
+      → returns { assignmentId, tokens[] }
 
-# Instructor
-POST   /api/classes              - Create class
-POST   /api/assignments          - Create assignment
-GET    /api/assignments/:id/submissions  - List submissions
-GET    /api/reports/:submissionId        - Get comprehension report
+GET   /api/assignments
+      → returns all assignments with student statuses (prof dashboard)
 
-# Student
-GET    /api/submissions/link/:token      - Validate unique link
-POST   /api/submissions                  - Submit assignment (multipart)
-GET    /api/defense/:sessionId           - Get session questions
+# Student submission flow
+GET   /api/submit/:token
+      → validates token (404 if invalid/used)
+      → returns { assignmentTitle, description, rubric, deadline, studentName }
 
-# Defense Session (Socket.IO)
-WS     /defense/:sessionId       - Real-time voice session
+POST  /api/submit/:token
+      body: multipart/form-data — file field
+      → uploads to GCS
+      → marks token as used
+      → saves submission to Firestore
+      → triggers ADK pipeline (async)
+      → returns { submissionId }
 
-# Webhooks (internal)
-POST   /internal/pipeline/start  - Triggers ADK pipeline after submission
+GET   /api/submit/:token/status
+      → returns { status, sessionId? }
+      → frontend polls this every 3s until status = "ready_for_defense"
+
+# Defense session (also via Socket.IO, see below)
+GET   /api/session/:sessionId
+      → returns { questions[], studentName, assignmentTitle }
+
+POST  /api/session/:sessionId/end
+      body: { recordingGcsUrl }
+      → marks session complete
+      → triggers Agent 3 evaluation
+      → returns { reportId }
+
+# Reports
+GET   /api/report/:reportId
+      → returns full report (used by both score screen and prof dashboard)
+
+# Internal
+POST  /internal/pipeline/start
+      body: { submissionId }
+      → called by backend after submission saved
+      → forwards to Python agent service at /run-pipeline
 ```
 
-### Socket.IO Events (Defense Session)
+### Socket.IO Events — Defense Session
+
+```
+Namespace: /defense
+
+Client → Server:
+  join_session     { sessionId }                      ← on page load
+  answer_done      { sessionId, transcript: string }  ← student pressed "done"
+  voice_chunk      { sessionId, audio: Buffer }        ← if using Cloud STT stream
+
+Server → Client:
+  session_ready    { questions[], totalCount }         ← on join
+  ask_question     { text, index, total }              ← AI asks question
+  ask_followup     { text }                            ← AI probes vague answer
+  transcript_live  { text }                            ← real-time STT update
+  session_complete { reportId }                        ← all questions done
+```
+
+---
+
+## Hardcoded Config
 
 ```javascript
-// Client → Server
-socket.emit('voice_chunk', { data: audioBuffer, sessionId })
-socket.emit('answer_complete', { sessionId, questionIndex })
+// backend/config.js
+export const PROF = {
+  email:    "prof@university.edu",
+  password: "defendly2024",           // simple client-side check, no JWT needed
+  name:     "Dr. Sharma"
+}
 
-// Server → Client
-socket.emit('question', { text: string, index: number })
-socket.emit('probe', { text: string })        // follow-up question
-socket.emit('session_complete', { reportId })
+export const STUDENTS = [
+  { name: "Alex Chen",    email: "alex@uni.edu"    },
+  { name: "Priya Mehta",  email: "priya@uni.edu"   },
+  { name: "Jordan Blake", email: "jordan@uni.edu"  },
+]
+
+// Tokens are generated fresh per assignment:
+// import { v4 as uuid } from 'uuid'
+// studentTokens = Object.fromEntries(STUDENTS.map(s => [uuid(), { ...s, used: false }]))
 ```
 
 ---
 
-## 7. Two-Person Task Split <a name="task-split"></a>
+## Agent Prompts
 
-### Person A — Backend + Agent Pipeline
+### Agent 1 — Submission Analyst
 
-**Owns:** Python ADK agents, Node.js API, Firestore, Google Cloud infra
+```python
+ANALYST_PROMPT = """
+You are analyzing a student's submitted assignment in the context of what the
+professor asked for. Your output will be used to generate targeted oral defense
+questions that test genuine understanding.
 
-#### Setup (Hour 0–2)
-- [ ] GCP project setup, enable all APIs (Vertex AI, Drive, Calendar, Gmail, Speech-to-Text, Firestore)
-- [ ] Install ADK: `pip install google-adk`
-- [ ] Service account + OAuth2 credentials
-- [ ] Cloud Run project scaffold (Node.js + Python)
-- [ ] Firestore collections setup
+Return ONLY valid JSON. No preamble, no markdown fences.
 
-#### Core Backend (Hour 2–10)
-- [ ] **Submission API** — POST /api/submissions (accepts file, writes to Drive + Firestore)
-- [ ] **Unique link system** — generate + validate per-student tokens
-- [ ] **ADK pipeline orchestrator** — triggers on submission webhook
-- [ ] **Agent 1: Submission Analyst** — Drive fetch + Gemini long-context analysis
-- [ ] **Agent 2: Interrogation Designer** — question generation with difficulty modes
-- [ ] **Calendar API integration** — auto-create Meet event after questions generated
-- [ ] **Gmail API** — send assignment notifications to students
+{
+  "key_concepts": [
+    "concepts the student explicitly discusses"
+  ],
+  "claims": [
+    "specific conclusions or arguments the student makes"
+  ],
+  "methodology": "how the student approached the problem",
+  "weak_areas": [
+    "sections that are vague, unsubstantiated, or logically incomplete"
+  ],
+  "assumptions": [
+    "things the student assumed without justifying"
+  ],
+  "rubric_gaps": [
+    "rubric criteria that the submission does not clearly address"
+  ],
+  "defensible_sections": [
+    "specific passages or claims that are worth probing in a defense"
+  ]
+}
 
-#### Defense Engine (Hour 10–18)
-- [ ] **Socket.IO server** — real-time voice session management
-- [ ] **Agent 3: Interrogator** — manages question flow, probing logic
-- [ ] **Agent 4: Voice Analysis** — Speech-to-Text + hesitation/confidence heuristics
-- [ ] **Agent 5: Evaluator** — Gemini-based comprehension scoring
-- [ ] **Agent 6: Report Generator** — structured report → Firestore → Gmail
+--- PROFESSOR'S ASSIGNMENT BRIEF ---
+Title: {ASSIGNMENT_TITLE}
+Description: {ASSIGNMENT_DESCRIPTION}
+Rubric / Learning objectives: {RUBRIC}
+Reference material summary (if any): {REFERENCE_SUMMARY}
 
-#### Polish (Hour 18–24)
-- [ ] Error handling + retries on agent pipeline
-- [ ] Cloud Run deployment + environment variables
-- [ ] End-to-end test with real submission
-
----
-
-### Person B — Frontend + UX
-
-**Owns:** React dashboards, student defense UI, real-time voice interface
-
-#### Setup (Hour 0–2)
-- [ ] React + Vite scaffold
-- [ ] TailwindCSS setup
-- [ ] Google OAuth2 login (react-oauth/google)
-- [ ] API client setup (axios + React Query)
-- [ ] Routing: instructor routes vs student routes
-
-#### Instructor Dashboard (Hour 2–8)
-- [ ] **Login page** — Google OAuth
-- [ ] **Class management page** — create class, add students (email list)
-- [ ] **Assignment creation form** — title, description, rubric, difficulty picker, deadline
-- [ ] **Submissions view** — table: student name, submission status, defense status, score
-- [ ] **Report view** — per-student: submission preview, questions asked, transcript, comprehension breakdown (understands X / weak in Y / can't justify Z)
-
-#### Student Interface (Hour 8–14)
-- [ ] **Unique link landing page** — assignment details + submit button
-- [ ] **File upload component** — drag/drop, progress bar, one-submission lock
-- [ ] **Defense waiting room** — shows Meet link + countdown after submission
-- [ ] **Defense session UI** (for demo/simulation):
-  - Current question display
-  - Voice recording indicator (waveform animation)
-  - Timer (10 min countdown)
-  - Real-time transcription display
-
-#### Demo Polish (Hour 14–20)
-- [ ] **Demo mode** — simulated submission → instant question generation → simulated defense
-- [ ] **Report visualization** — comprehension score gauge, color-coded strengths/weaknesses
-- [ ] **Responsive design** — works on laptop for demo
-- [ ] Loading states, error states, success states
-
-#### Final Polish (Hour 20–24)
-- [ ] Wire all frontend to real backend endpoints
-- [ ] Live test with Person A's API
-- [ ] Fix any integration issues
-- [ ] Prepare 60-second demo flow
-
----
-
-## 8. Build Timeline (24 Hours) <a name="build-timeline"></a>
-
-```
-Hour 0–2   │ BOTH: GCP setup, project scaffold, credentials
-Hour 2–8   │ A: Submission API + Drive/Firestore
-           │ B: Instructor dashboard + class/assignment forms
-Hour 8–14  │ A: ADK agents 1–2 + Calendar/Gmail integrations
-           │ B: Student submission UI + defense waiting room
-Hour 14–18 │ A: ADK agents 3–5 (defense engine + evaluator)
-           │ B: Defense session UI + report visualization
-Hour 18–20 │ A: Agent 6 (report gen) + Cloud Run deploy
-           │ B: Wire frontend to all endpoints
-Hour 20–22 │ BOTH: Integration testing + bug fixes
-Hour 22–24 │ BOTH: Demo rehearsal + final polish
+--- STUDENT'S SUBMISSION ---
+{SUBMISSION_TEXT}
+"""
 ```
 
+### Agent 2 — Interrogation Designer
+
+```python
+QUESTION_PROMPT = """
+Generate exactly {N} oral defense questions for this student's submission.
+Difficulty level: {DIFFICULTY}
+
+STRICT RULES — every question must satisfy ALL of the following:
+1. It references something SPECIFIC in the student's submission (quote or paraphrase
+   the exact section it targets in "section_reference")
+2. It is RELEVANT to the professor's rubric or learning objectives
+3. It is IMPOSSIBLE to answer well without having understood and written the work
+4. Generic topic questions are FORBIDDEN ("What is X?", "Explain Y" with no submission anchor)
+5. Each question must have a follow-up for when the student answers vaguely
+
+For difficulty "easy":   test whether they understand their own conclusions
+For difficulty "medium": probe their methodology and justify specific choices
+For difficulty "hard":   challenge assumptions, ask what-if variants, expose gaps
+
+Return ONLY valid JSON. No preamble, no markdown fences.
+
+{
+  "questions": [
+    {
+      "text": "the question asked aloud to the student",
+      "section_reference": "the specific part of their submission this targets",
+      "rubric_criterion": "which rubric point this tests",
+      "follow_up": "if their answer is vague or evasive, ask this"
+    }
+  ]
+}
+
+--- PROFESSOR'S CONTEXT ---
+Rubric: {RUBRIC}
+Learning objectives: {ASSIGNMENT_DESCRIPTION}
+
+--- SUBMISSION ANALYSIS ---
+{ANALYSIS_JSON}
+"""
+```
+
+### Agent 3 — Comprehension Evaluator
+
+```python
+EVAL_PROMPT = """
+Evaluate a student's oral defense performance and produce a comprehension report.
+
+You have:
+- The professor's rubric and assignment context
+- The student's original submission analysis
+- Every question asked, with the student's transcribed answer and voice signals
+- Voice signals per answer: hesitation count, filler word count, avg response
+  latency in ms, estimated confidence score (0–1)
+
+Assess whether the student genuinely understands the work they submitted.
+A student who authored their own work will: answer quickly, refer to specific
+details, self-correct naturally, and give consistent reasoning across questions.
+A student who did not will: hesitate on specifics, give textbook definitions
+instead of submission-specific answers, contradict themselves, and struggle with
+follow-ups.
+
+Return ONLY valid JSON. No preamble, no markdown fences.
+
+{
+  "overall_score": <0-100>,
+  "understands": [
+    "topic or concept they clearly grasped, with brief evidence"
+  ],
+  "weak_in": [
+    "area where their knowledge was surface-level, with brief evidence"
+  ],
+  "cannot_justify": [
+    "specific claim from their submission they could not defend"
+  ],
+  "rubric_alignment": [
+    {
+      "criterion": "rubric criterion text",
+      "verdict": "demonstrated | partial | not demonstrated",
+      "evidence": "brief quote or paraphrase from their answer"
+    }
+  ],
+  "recommendation": "one of exactly: Clearly authored | Possibly AI-assisted but understands | AI-generated, does not understand",
+  "summary": "2 sentences of plain English for the professor"
+}
+
+--- PROFESSOR'S CONTEXT ---
+Rubric: {RUBRIC}
+
+--- SUBMISSION ANALYSIS ---
+{ANALYSIS_JSON}
+
+--- DEFENSE TRANSCRIPT ---
+{QA_JSON}
+"""
+```
+
+### AI Tutor System Prompt
+
+```python
+TUTOR_SYSTEM = """
+You are an academic tutor reviewing a student's oral defense session with them.
+This is a voice conversation — keep your responses concise (2–4 sentences max),
+direct, and spoken-word natural. No bullet points, no lists.
+
+You know exactly:
+- What the assignment asked for
+- What the student submitted
+- Every question they were asked
+- Their exact answers
+- Where their understanding broke down
+
+When they ask where they went wrong, be SPECIFIC. Reference their actual answers,
+not generic advice. For example: "When you were asked about learning rate, you
+said '{their answer}' — the gap there is that you didn't connect it to
+convergence speed. Here's what a complete answer looks like: ..."
+
+Help them understand the concept gap, not just the score. Be encouraging but honest.
+
+--- ASSIGNMENT ---
+{ASSIGNMENT_DESCRIPTION}
+Rubric: {RUBRIC}
+
+--- COMPREHENSION REPORT ---
+{REPORT_JSON}
+
+--- DEFENSE Q&A ---
+{QA_JSON}
+"""
+```
+
 ---
 
-## 9. Environment Setup <a name="environment-setup"></a>
+## Voice Defense — Technical Implementation
 
-### GCP APIs to Enable
+### How the browser session works
+
+```
+1. Student opens /defense/:sessionId
+2. React fetches questions from API → cached locally
+3. MediaRecorder starts (records full session audio for GCS)
+4. Socket.IO connects to /defense namespace, emits join_session
+5. Server emits ask_question { text, index: 1, total: 4 }
+6. Frontend calls Cloud TTS → plays audio through Web Audio API
+7. Student answers:
+     Option A (simpler):  Web Speech API captures speech → live transcript
+                          Student clicks "Done" → transcript sent via answer_done
+     Option B (better):   MediaRecorder chunks → socket voice_chunk events
+                          Server streams to Cloud STT → transcript_live events back
+8. Server receives answer → saves to Firestore transcript array
+9. Agent logic decides: good answer → next question
+                        vague answer → emit ask_followup
+                        all done    → emit session_complete
+10. On session_complete:
+     - MediaRecorder stops → blob uploaded to GCS
+     - POST /api/session/:id/end with recordingGcsUrl
+     - Agent 3 evaluates → report saved → reportId returned
+     - Frontend navigates to /score/:reportId
+```
+
+### Voice stack recommendation
+
+Start with **Option A** (Web Speech API + Cloud TTS). Get it working end-to-end first.
+Upgrade to Option B only if time allows after everything else is done.
+
+```javascript
+// Option A — browser STT (simplest, works for demo)
+const recognition = new window.SpeechRecognition()
+recognition.continuous = true
+recognition.interimResults = true
+recognition.onresult = (e) => {
+  const transcript = Array.from(e.results).map(r => r[0].transcript).join('')
+  setLiveTranscript(transcript)
+}
+
+// Cloud TTS — AI speaks the question
+// POST /api/tts { text } → returns { audioBase64 }
+const audio = new Audio(`data:audio/mp3;base64,${audioBase64}`)
+audio.play()
+```
+
+---
+
+## Assignment Creation — Prof UI Details
+
+When creating an assignment, the prof fills in:
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| Title | text | yes | shown to student |
+| Description | textarea | yes | what the assignment is about, scope, context |
+| Rubric | textarea | yes | learning objectives, what must be demonstrated to pass |
+| Difficulty | select | yes | easy / medium / hard — controls question depth |
+| Deadline | datetime | yes | shown on Calendar invite and student page |
+| Reference documents | file upload (multi) | no | PDFs, notes, slides — fed to Agent 1 context |
+
+Reference documents are stored in GCS and their text is extracted (via Gemini or pypdf2)
+and included in the Agent 1 prompt as `{REFERENCE_SUMMARY}`. This allows the agent to
+ask questions that reference course material, expected methodologies, or specific
+frameworks the professor wants tested.
+
+---
+
+## Two-Person Build Plan
+
+### Person A — Backend + Agents
+
+**Hour 0–2: Setup**
+- [ ] GCP project, enable all APIs (Vertex AI, STT, TTS, Calendar, GCS, Firestore, Cloud Run)
+- [ ] Download service account JSON, set up Calendar OAuth2 refresh token
+- [ ] `npm init` backend, install all packages
+- [ ] `pip install` agent packages
+- [ ] Firestore: create collections manually or via script
+- [ ] GCS: create bucket, set CORS for browser uploads
+
+**Hour 2–6: Submission + Storage layer**
+- [ ] `GET /api/submit/:token` — validate token, return assignment + student name
+- [ ] `POST /api/submit/:token` — accept file, upload to GCS, mark token used, save Firestore doc
+- [ ] `GET /api/submit/:token/status` — return status field from Firestore
+- [ ] `POST /api/assignments` — create assignment doc, generate tokens, send Calendar invites
+- [ ] `GET /api/assignments` — return all assignments with per-student status
+- [ ] Reference doc upload to GCS (optional field in POST /api/assignments)
+
+**Hour 6–12: Agent pipeline**
+- [ ] `schemas.py` — Pydantic models: `AnalystOutput`, `QuestionSet`, `Question`, `EvalReport`
+- [ ] `prompts.py` — all three prompts templated as Python f-strings
+- [ ] `analyst.py` — fetch submission from GCS, extract text, call Gemini, parse JSON output
+- [ ] `designer.py` — takes `AnalystOutput` + assignment context, calls Gemini, returns `QuestionSet`
+- [ ] `evaluator.py` — takes transcript + voice signals + analysis, calls Gemini, returns `EvalReport`
+- [ ] `orchestrator.py` — runs agents in sequence, writes to Firestore at each step:
+  ```
+  submission.status = "analyzing"
+  → run analyst → save submission.analysis
+  → run designer → save submission.questions
+  → submission.status = "ready_for_defense"
+  [after defense]
+  → run evaluator → save /reports doc
+  ```
+- [ ] `main.py` — Flask server, `POST /run-pipeline { submissionId }` triggers orchestrator
+- [ ] `pipeline.js` (backend service) — HTTP call to Python service
+
+**Hour 12–18: Voice session**
+- [ ] `tts.js` — `POST /api/tts { text }` → Cloud TTS → return base64 audio
+- [ ] `stt.js` — if doing Option B: streaming STT via socket.io voice chunks
+- [ ] `defenseSession.js` (Socket.IO) — full defense flow handler:
+  - On `join_session`: fetch questions, emit first `ask_question`
+  - On `answer_done`: save answer to Firestore transcript, decide next/followup/end
+  - On `session_complete`: emit to client, wait for recording URL
+- [ ] `POST /api/session/:id/end` — save recordingGcsUrl, trigger evaluator
+
+**Hour 18–21: Reports + Deploy**
+- [ ] `GET /api/report/:reportId` — return full report doc
+- [ ] Cloud Run deploy: Node.js service + Python service as separate services
+- [ ] Wire `.env` to GCP Secret Manager or just env vars on Cloud Run
+- [ ] End-to-end smoke test with a real PDF and voice session
+
+**Hour 21–24: Integration + fixes**
+- [ ] Fix anything broken from Person B's integration test
+- [ ] Add basic error handling (pipeline failure → status = "error", show message)
+
+---
+
+### Person B — Frontend
+
+**Hour 0–2: Setup**
+- [ ] `npm create vite@latest defendly-ui -- --template react`
+- [ ] Install all packages, configure TailwindCSS
+- [ ] Set up React Router routes:
+  `/login` → `/dashboard` → `/submit/:token` → `/defense/:sessionId` → `/score/:reportId` → `/tutor/:reportId`
+- [ ] Create `mockData.js` with fake API responses for every endpoint (work offline)
+- [ ] Create `api.js` with all axios calls stubbed (swap base URL at integration time)
+
+**Hour 2–7: Prof dashboard**
+- [ ] `ProfLogin.jsx` — email + password form, compare to hardcoded PROF config, set `sessionStorage.prof = true`
+- [ ] `ProfDashboard.jsx`:
+  - Left: assignment list (click to expand), "New assignment" button
+  - Right: student status table — name, status badge, score (if done), "View report" link
+  - Assignment creation form (inline or modal):
+    - Title, description, rubric textarea, difficulty select, deadline picker
+    - Multi-file upload for reference documents
+    - Submit → `POST /api/assignments`
+- [ ] `ScoreCard.jsx`:
+  - Three labeled sections: "Understands" (green), "Weak in" (amber), "Cannot justify" (red)
+  - Per-rubric-criterion verdict badges
+  - Overall score as large number
+- [ ] `RecordingPlayer.jsx` — HTML `<audio>` element with GCS signed URL, basic controls
+
+**Hour 7–11: Student submission UI**
+- [ ] `StudentLanding.jsx`:
+  - Calls `GET /api/submit/:token` on load (redirect to error page if invalid/used)
+  - Show: assignment title, description, rubric, deadline countdown
+  - Drag-and-drop file upload zone with progress bar
+  - On submit: `POST /api/submit/:token`, then disable form, show "Submission received. Preparing your defense..."
+  - Start polling `GET /api/submit/:token/status` every 3 seconds
+  - When status = `ready_for_defense`: show "Start your defense session" button → navigate to `/defense/:sessionId`
+
+**Hour 11–17: Defense session UI**
+- [ ] `DefenseSession.jsx` — this is the most important screen, make it look great:
+  - Full-screen, voice-first layout (dark mode recommended)
+  - Header: assignment title, student name, `Timer.jsx` (10 min countdown)
+  - Center: current question text (large, readable)
+    - Question index pill: "Question 2 of 4"
+    - Follow-up label if applicable: "Follow-up:"
+  - Bottom: `VoiceWave.jsx` + "Done answering" button
+  - Side strip: `TranscriptFeed.jsx` — live transcript scrolling as student speaks
+- [ ] `VoiceWave.jsx` — 5 bars with CSS keyframe animation, pulses when mic is active
+- [ ] `Timer.jsx` — `setInterval` countdown, CSS class changes at 3 min and 1 min
+- [ ] `TranscriptFeed.jsx` — scrolling div, appends text from socket `transcript_live` events
+- [ ] Wire Socket.IO:
+  - `join_session` on mount
+  - Listen for `ask_question` → update question state + call TTS API + play audio
+  - Listen for `ask_followup` → same
+  - Listen for `session_complete` → stop recording, upload blob, navigate to score
+  - Emit `answer_done` with transcript on button click
+- [ ] `MediaRecorder` setup:
+  ```javascript
+  const recorder = new MediaRecorder(stream)
+  const chunks = []
+  recorder.ondataavailable = e => chunks.push(e.data)
+  recorder.onstop = async () => {
+    const blob = new Blob(chunks, { type: 'audio/webm' })
+    // upload to GCS via signed URL or /api/upload-recording endpoint
+    // then POST /api/session/:id/end with recordingGcsUrl
+  }
+  ```
+
+**Hour 17–21: Score screen + AI tutor**
+- [ ] `ScoreScreen.jsx`:
+  - Animated count-up to `overallScore` (use `requestAnimationFrame`, 1.5s)
+  - Render `ScoreCard.jsx` with report data
+  - Recommendation badge (color-coded: green / amber / red)
+  - "Talk to AI tutor" button → navigate to `/tutor/:reportId`
+- [ ] `AITutor.jsx`:
+  - Fetch report on load (passed as context to every Gemini call)
+  - Chat bubble UI: user bubbles (right, voice transcript) + AI bubbles (left, TTS response)
+  - Mic button at bottom: hold to speak, release to send
+  - Each user turn: STT → `POST /api/tutor/chat { reportId, message, history }` → TTS response played
+  - Show transcript of AI response as text while it speaks
+
+**Hour 21–24: Integration + polish**
+- [ ] Swap `mockData.js` for real API base URL (`import.meta.env.VITE_API_URL`)
+- [ ] Full flow test with Person A's deployed API
+- [ ] Fix broken states: invalid token, pipeline error, empty report
+- [ ] Add loading skeletons to dashboard and score screen
+- [ ] Final visual pass: consistent spacing, no broken mobile layout
+
+---
+
+## Build Timeline
+
+```
+Hour  0–2   BOTH   GCP setup, project scaffolds, mock data contract agreed
+Hour  2–6   A      Submission API + GCS + Calendar invites + token system
+            B      ProfLogin + ProfDashboard + assignment creation form
+Hour  6–10  A      ADK agents: analyst (1) + designer (2) — get output printing to console
+            B      StudentLanding + file upload + status polling
+Hour 10–14  A      ADK evaluator (3) + orchestrator + Firestore state machine
+            B      DefenseSession UI — voice waveform, timer, transcript feed (against mock)
+Hour 14–18  A      Voice session: TTS/STT endpoints + Socket.IO defense handler
+            B      ScoreScreen + AITutor UI
+Hour 18–20  A      Cloud Run deploy (Node.js + Python), end-to-end smoke test
+            B      Wire all frontend to real API, test full flow
+Hour 20–22  BOTH   Integration debugging, edge case fixes
+Hour 22–24  BOTH   Demo rehearsal, final UI polish, prep talking points
+```
+
+---
+
+## Environment Setup
+
+### Enable GCP APIs
 
 ```bash
 gcloud services enable \
   aiplatform.googleapis.com \
+  texttospeech.googleapis.com \
   speech.googleapis.com \
-  gmail.googleapis.com \
   calendar-json.googleapis.com \
-  drive.googleapis.com \
+  storage.googleapis.com \
   firestore.googleapis.com \
   run.googleapis.com \
   cloudbuild.googleapis.com
 ```
 
-### Node.js Backend
+### Backend
 
 ```bash
-mkdir defendly-api && cd defendly-api
-npm init -y
+cd backend
 npm install express firebase-admin googleapis \
-  @google-cloud/speech socket.io cors dotenv multer
+  @google-cloud/speech @google-cloud/text-to-speech \
+  @google-cloud/storage socket.io cors dotenv multer uuid
 ```
 
-### Python ADK Service
+### Agent Service
 
 ```bash
-mkdir defendly-agents && cd defendly-agents
+cd agents
 pip install google-adk google-cloud-aiplatform \
-  google-cloud-firestore pydantic python-dotenv
+  google-cloud-firestore google-cloud-storage \
+  pydantic python-dotenv pypdf2 flask
 ```
 
-### React Frontend
+### Frontend
 
 ```bash
-npm create vite@latest defendly-ui -- --template react
-cd defendly-ui
-npm install @tanstack/react-query axios @react-oauth/google \
-  tailwindcss lucide-react socket.io-client
+cd frontend
+npm create vite@latest . -- --template react
+npm install tailwindcss @tailwindcss/vite \
+  react-router-dom @tanstack/react-query \
+  axios socket.io-client lucide-react
 ```
 
 ### .env (Backend)
 
 ```env
-GOOGLE_PROJECT_ID=your-project-id
+GOOGLE_PROJECT_ID=defendly-hackathon
 GOOGLE_APPLICATION_CREDENTIALS=./service-account.json
 VERTEX_AI_LOCATION=us-central1
-GEMINI_MODEL=gemini-1.5-pro
-FIRESTORE_DATABASE=(default)
-GOOGLE_OAUTH_CLIENT_ID=xxx
-GOOGLE_OAUTH_CLIENT_SECRET=xxx
+GEMINI_MODEL=gemini-1.5-pro-002
+GCS_BUCKET=defendly-submissions
+AGENT_SERVICE_URL=https://defendly-agents-xxxx.run.app
+GOOGLE_CLIENT_ID=xxx
+GOOGLE_CLIENT_SECRET=xxx
+GOOGLE_CALENDAR_REFRESH_TOKEN=xxx
+BASE_URL=https://defendly-api-xxxx.run.app
+PORT=8080
+```
+
+### .env (Frontend)
+
+```env
+VITE_API_URL=https://defendly-api-xxxx.run.app
+VITE_SOCKET_URL=https://defendly-api-xxxx.run.app
 ```
 
 ---
 
-## 10. Gemini Prompts <a name="gemini-prompts"></a>
+## Demo Script (60 Seconds)
 
-### Agent 1: Submission Analysis Prompt
+**0:00–0:10 — Prof creates assignment**
+Log in. Click "New Assignment."
+Fill: "Explain gradient descent and justify your hyperparameter choices."
+Rubric: "Must demonstrate understanding of learning rate, convergence, and momentum."
+Difficulty: Hard. Add a reference PDF (lecture notes on optimizers). Hit create.
+Calendar invites sent automatically to three students.
 
-```
-You are an academic defense preparation agent. You will be given a student's assignment submission.
+**0:10–0:18 — Student submits**
+Open the calendar invite as a student. Landing page shows assignment details + rubric.
+Drop in a clearly AI-generated PDF. Submit.
+Screen shows: "Analyzing your submission..."
 
-Your task: analyze the document and extract structured data for generating oral defense questions.
+**0:18–0:27 — Questions appear**
+Page transitions: "Your defense session is ready."
+Pause here. Show the 3 generated questions — let judges read them.
+Point out: these questions reference the student's *exact* methodology and the *rubric criteria*.
+Not "what is gradient descent?" — but "you used 0.01 as your learning rate in section 2 — what happens to convergence if you double it?"
 
-Return JSON only. No preamble.
+**0:27–0:42 — Live voice defense**
+Join session. Dark screen. Timer starts. AI voice reads Q1 aloud.
+Student answers (poorly — it's AI-generated work). Transcript appears in real time.
+AI detects vague answer, asks follow-up probe. Student stumbles.
+Move to Q2. Show the same pattern.
 
-{
-  "key_concepts": ["..."],          // main ideas the student discusses
-  "claims": ["..."],                // specific claims or conclusions made
-  "methodology": "...",             // how the student approached the problem
-  "weak_areas": ["..."],            // sections with vague, unsubstantiated, or unclear reasoning
-  "assumptions": ["..."],           // explicit or implicit assumptions made
-  "terminology": ["..."]            // domain-specific terms used
-}
+**0:42–0:50 — Score reveal**
+Session ends. Score counts up: 31/100.
+Breakdown: "Understands: basic definition of gradient | Weak in: learning rate intuition, momentum | Cannot justify: convergence claim in section 2."
+Rubric alignment: all three criteria — "not demonstrated."
+Recommendation badge: "AI-generated, does not understand."
 
-Assignment submission:
-<submission>
-{SUBMISSION_TEXT}
-</submission>
-```
+**0:50–0:57 — AI tutor**
+Student asks: "What did I get wrong on the learning rate question?"
+AI responds in voice: "When I asked about learning rate, you said [their answer].
+The gap is that you didn't connect rate to step size and convergence speed. Here's what that looks like..."
 
-### Agent 2: Question Generation Prompt
+**0:57–1:00 — Prof dashboard**
+Switch to prof view. Three students, one score visible. Click — see full transcript, recording, rubric verdict per criterion.
 
-```
-You are generating oral defense questions for a student who submitted an assignment.
-Difficulty: {DIFFICULTY}
-Rubric: {RUBRIC}
-
-Based on the following analysis of their submission, generate exactly {N} questions.
-
-Rules:
-- Questions must be answerable ONLY if the student actually wrote and understood the submission
-- No generic topic questions — every question must reference something specific from the submission
-- Questions should probe methodology, justify claims, and expose weak reasoning
-- Difficulty "hard" means questions that even the author would need to think about
-- Return JSON only
-
-{
-  "questions": [
-    {
-      "text": "...",
-      "targets": "...",            // which concept/section this probes
-      "follow_up": "..."           // follow-up if answer is vague
-    }
-  ]
-}
-
-Submission analysis:
-<analysis>
-{ANALYSIS_JSON}
-</analysis>
-```
-
-### Agent 5: Comprehension Evaluation Prompt
-
-```
-You are evaluating a student's oral defense performance.
-
-You will receive:
-- The original submission analysis
-- The questions asked
-- Transcripts of the student's answers
-- Voice signals (hesitation, confidence, latency)
-
-Your job: determine whether the student genuinely understands the work they submitted.
-
-Return JSON only:
-
-{
-  "overall_score": 0-100,
-  "understands": ["concept A", "..."],
-  "weak_in": ["concept B", "..."],
-  "cannot_justify": ["claim C", "..."],
-  "signs_of_genuine_understanding": "...",
-  "signs_of_superficial_knowledge": "...",
-  "recommendation": "Likely authored | Likely AI-assisted but understands | Likely AI-generated, does not understand"
-}
-
-Submission analysis: {ANALYSIS_JSON}
-Questions + Answers: {QA_TRANSCRIPT}
-Voice signals: {VOICE_SIGNALS_JSON}
-```
+**Final line:**
+> "The submission was irrelevant the moment this system read it."
 
 ---
 
-## 11. Demo Script <a name="demo-script"></a>
+## Judging Checklist
 
-### 60-Second Hackathon Demo
-
-**0:00 — Setup (10s)**
-Show instructor dashboard. One assignment already created: "Explain gradient descent."
-Rubric: "Must justify choice of learning rate and convergence behaviour." Difficulty: Hard.
-
-**0:10 — Student submits (10s)**
-Open student link. Drop in a clearly AI-generated PDF. Click submit.
-Message: *"Your submission has been received. Your defense session has been scheduled."*
-
-**0:20 — Questions appear (10s)**
-Show the instructor dashboard updating in real-time. Three questions appear:
-- *"You claim a learning rate of 0.01 was optimal. What would happen at 0.1?"*
-- *"In section 2 you describe momentum — explain what problem it solves."*
-- *"Your convergence graph is smooth. What conditions would cause oscillation?"*
-
-**0:30 — Defense session (15s)**
-Switch to student defense UI. Show the question. Student answers (live or pre-recorded).
-Show real-time transcript appearing. Timer counting down.
-
-**0:45 — Report (15s)**
-Show instructor report:
-
-```
-COMPREHENSION REPORT — Student: Alex Chen
-Submission quality: High (91/100)
-Understanding: Low (34/100)
-
-✅ Understands: basic definition of gradient descent
-⚠️  Weak in: learning rate intuition, momentum
-❌  Cannot justify: convergence claim in section 2
-
-Recommendation: Likely AI-generated. Does not demonstrate understanding.
-```
-
-**Message to judges:** *"The submission was irrelevant the moment we built this."*
+| Track Criterion | How Defendly Delivers |
+|----------------|----------------------|
+| Agentic workflow | 3-agent ADK pipeline with A2A handoffs; interrogator agent makes autonomous branching decisions during live defense |
+| Google Cloud Platform | Vertex AI (Gemini 1.5 Pro), Cloud STT, Cloud TTS, Cloud Run, GCS, Firestore, Calendar API — entire stack is GCP |
+| Long-context reasoning | Gemini reads full submission + assignment brief + reference documents together in a single context window |
+| Bridges AI and real world | Solves an active, unsolved, daily problem for every educator on the planet |
+| AI as active collaborator | Agent adapts in real time — follow-up questions based on answer quality; tutor references exact student answers |
+| Functional demo | End-to-end in 60 seconds, every step visible, no hand-waving |
 
 ---
 
-## 12. Judging Criteria Alignment <a name="judging-alignment"></a>
-
-| Track Criterion | How Defendly Addresses It |
-|----------------|--------------------------|
-| **Agentic workflow** | 6-agent pipeline with A2A communication via ADK |
-| **Google Cloud Platform** | Vertex AI, Cloud Run, Firestore, all Workspace APIs |
-| **Long-context reasoning** | Gemini 1.5 Pro reads full student submissions |
-| **Real-world gap bridged** | Solves active, widespread academic integrity problem |
-| **Active collaborator (not passive tool)** | Agent adapts in real-time based on student responses |
-| **Functional demo** | Full end-to-end flow demonstrable in 60 seconds |
-
----
-
-## One-Line Pitch
-
-> **Defendly doesn't grade what you submit. It grades whether you can stand behind it.**
-
----
-
-*Built for Google Cloud Hackathon — Build With AI: The Agentic Frontier*
-*Team: 2 members | Stack: Vertex AI + ADK + Google Workspace + React*
+*Defendly — Built for Google Cloud Hackathon: Build With AI — The Agentic Frontier*
+*2-person team · Vertex AI + ADK + GCS + Calendar API + Cloud STT/TTS + React*
