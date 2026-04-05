@@ -16,55 +16,66 @@ class PipelineOrchestrator:
 
     def run_pipeline(self, submission_id: str) -> Dict[str, Any]:
         submission_ref = self.db.collection('submissions').document(submission_id)
-        submission_doc = submission_ref.get()
-        if not submission_doc.exists:
-            raise ValueError(f'Submission {submission_id} not found')
+        try:
+            submission_doc = submission_ref.get()
+            if not submission_doc.exists:
+                raise ValueError(f'Submission {submission_id} not found')
 
-        submission = submission_doc.to_dict()
-        assignment_doc = self.db.collection('assignments').document(submission['assignmentId']).get()
-        assignment = assignment_doc.to_dict()
+            submission = submission_doc.to_dict()
+            assignment_doc = self.db.collection('assignments').document(submission['assignmentId']).get()
+            assignment = assignment_doc.to_dict()
+            if not assignment:
+                raise ValueError(f"Assignment {submission['assignmentId']} not found")
 
-        submission_ref.update({'status': 'analyzing'})
-        submission_text = download_pdf_from_gcs(submission['gcsFileUrl'])
+            submission_ref.update({'status': 'analyzing'})
+            submission_text = download_pdf_from_gcs(submission['gcsFileUrl'])
+            if not submission_text.strip():
+                raise ValueError('No extractable text found in submitted file')
 
-        analysis = run_analyst(
-            submission_text=submission_text,
-            assignment_title=assignment['title'],
-            assignment_description=assignment['description'],
-            rubric=assignment['rubric'],
-            reference_summary='\n'.join(assignment.get('referenceDocsGcs', [])),
-        )
+            analysis = run_analyst(
+                submission_text=submission_text,
+                assignment_title=assignment['title'],
+                assignment_description=assignment['description'],
+                rubric=assignment['rubric'],
+                reference_summary='\n'.join(assignment.get('referenceDocsGcs', [])),
+            )
 
-        question_set = run_designer(
-            analyst_output=analysis,
-            rubric=assignment['rubric'],
-            assignment_description=assignment['description'],
-            difficulty=assignment['difficulty'],
-        )
+            question_set = run_designer(
+                analyst_output=analysis,
+                rubric=assignment['rubric'],
+                assignment_description=assignment['description'],
+                difficulty=assignment['difficulty'],
+            )
 
-        session_id = str(uuid.uuid4())
-        self.db.collection('defense_sessions').document(session_id).set({
-            'submissionId': submission_id,
-            'studentName': submission['studentName'],
-            'status': 'active',
-            'transcript': [],
-            'recordingGcsUrl': None,
-            'startedAt': firestore.SERVER_TIMESTAMP,
-            'endedAt': None,
-        })
+            session_id = str(uuid.uuid4())
+            self.db.collection('defense_sessions').document(session_id).set({
+                'submissionId': submission_id,
+                'studentName': submission['studentName'],
+                'status': 'active',
+                'transcript': [],
+                'recordingGcsUrl': None,
+                'startedAt': firestore.SERVER_TIMESTAMP,
+                'endedAt': None,
+            })
 
-        submission_ref.update({
-            'analysis': analysis,
-            'questions': question_set['questions'],
-            'status': 'ready_for_defense',
-            'sessionId': session_id,
-        })
+            submission_ref.update({
+                'analysis': analysis,
+                'questions': question_set['questions'],
+                'status': 'ready_for_defense',
+                'sessionId': session_id,
+            })
 
-        return {
-            'submissionId': submission_id,
-            'sessionId': session_id,
-            'questions': question_set['questions'],
-        }
+            return {
+                'submissionId': submission_id,
+                'sessionId': session_id,
+                'questions': question_set['questions'],
+            }
+        except Exception as error:
+            submission_ref.update({
+                'status': 'error',
+                'error': str(error),
+            })
+            raise
 
     def evaluate_session(self, session_id: str) -> Dict[str, Any]:
         session_ref = self.db.collection('defense_sessions').document(session_id)

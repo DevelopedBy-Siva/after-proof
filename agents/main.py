@@ -1,4 +1,5 @@
 import os
+import traceback
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
@@ -21,18 +22,30 @@ def health():
 @app.post('/run-pipeline')
 def run_pipeline():
     try:
-        result = orchestrator.run_pipeline(request.json['submissionId'])
+        payload = request.get_json(force=True) or {}
+        submission_id = payload['submissionId']
+        print(f'[run-pipeline] starting submissionId={submission_id}', flush=True)
+        result = orchestrator.run_pipeline(submission_id)
+        print(f'[run-pipeline] completed submissionId={submission_id}', flush=True)
         return jsonify(result)
     except Exception as error:
+        print(f'[run-pipeline] failed: {error}', flush=True)
+        traceback.print_exc()
         return jsonify({'error': str(error)}), 500
 
 
 @app.post('/evaluate-defense')
 def evaluate_defense():
     try:
-        result = orchestrator.evaluate_session(request.json['sessionId'])
+        payload = request.get_json(force=True) or {}
+        session_id = payload['sessionId']
+        print(f'[evaluate-defense] starting sessionId={session_id}', flush=True)
+        result = orchestrator.evaluate_session(session_id)
+        print(f'[evaluate-defense] completed sessionId={session_id}', flush=True)
         return jsonify(result)
     except Exception as error:
+        print(f'[evaluate-defense] failed: {error}', flush=True)
+        traceback.print_exc()
         return jsonify({'error': str(error)}), 500
 
 
