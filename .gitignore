@@ -29,3 +29,5 @@ frontend/.vite/
 # IDE
 .vscode/
 .idea/
+
+deploy.sh

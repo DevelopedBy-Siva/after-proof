@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from google.cloud import firestore
 
-from agents.orchestrator import PipelineOrchestrator
+from core.orchestrator import PipelineOrchestrator
 
 load_dotenv()
 

@@ -1,8 +1,8 @@
 import json
 
-from agents.prompts import ANALYST_PROMPT
-from agents.schemas import AnalystOutput
-from agents.utils import get_model
+from core.prompts import ANALYST_PROMPT
+from core.schemas import AnalystOutput
+from core.utils import get_model
 
 
 def run_analyst(

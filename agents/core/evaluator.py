@@ -1,23 +1,22 @@
 import json
 
-from agents.prompts import QUESTION_PROMPT
-from agents.schemas import QuestionSet
-from agents.utils import get_model
+from core.prompts import EVAL_PROMPT
+from core.schemas import EvalReport
+from core.utils import get_model
 
 
-def run_designer(
+def run_evaluator(
+    transcript_json: str,
     analyst_output: dict,
     assignment_description: str,
     additional_details: str,
-    difficulty: str = 'medium',
 ) -> dict:
     model = get_model()
-    prompt = QUESTION_PROMPT.format(
-        N=3,
-        DIFFICULTY=difficulty,
+    prompt = EVAL_PROMPT.format(
         ASSIGNMENT_DESCRIPTION=assignment_description,
         ADDITIONAL_DETAILS=additional_details or 'None provided',
         ANALYSIS_JSON=json.dumps(analyst_output, indent=2),
+        QA_JSON=transcript_json,
     )
 
     response = model.generate_content(prompt)
@@ -29,8 +28,4 @@ def run_designer(
             text = text[4:]
 
     parsed = json.loads(text.strip())
-
-    if isinstance(parsed, list):
-        parsed = {'questions': parsed}
-
-    return QuestionSet.model_validate(parsed).model_dump()
+    return EvalReport.model_validate(parsed).model_dump()

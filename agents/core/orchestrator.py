@@ -4,10 +4,10 @@ from typing import Any, Dict
 
 from google.cloud import firestore
 
-from agents.analyst import run_analyst
-from agents.designer import run_designer
-from agents.evaluator import run_evaluator
-from agents.utils import download_pdf_from_gcs
+from core.analyst import run_analyst
+from core.designer import run_designer
+from core.evaluator import run_evaluator
+from core.utils import download_pdf_from_gcs
 
 
 class PipelineOrchestrator:
