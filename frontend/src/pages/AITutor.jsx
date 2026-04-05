@@ -74,7 +74,7 @@ export default function AITutor() {
           </h1>
 
           <p className="mt-2 text-sm leading-6 text-neutral-500">
-            Ask follow-up questions about your defense, understanding gaps, and
+            Ask follow-up questions about your knowledge check, understanding gaps, and
             where your responses may not have aligned with your submission.
           </p>
         </div>
@@ -94,7 +94,7 @@ export default function AITutor() {
                 <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-5">
                   <p className="text-sm leading-6 text-neutral-600">
                     Ask where your understanding broke down, and the tutor will
-                    respond using your defense context and behavioral signals.
+                    respond using your knowledge check context and behavioral signals.
                   </p>
                 </div>
               ) : (

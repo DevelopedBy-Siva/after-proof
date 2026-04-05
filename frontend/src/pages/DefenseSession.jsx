@@ -252,20 +252,20 @@ export default function DefenseSession() {
   }
 
   function getStatusText() {
-    if (mode === 'loading') return 'Loading your defense session'
+    if (mode === 'loading') return 'Loading your knowledge check session'
     if (mode === 'priming') return 'Preparing the first question'
     if (mode === 'speaking') return 'Playing the question'
     if (mode === 'listening') return 'Speak your answer. Audio is being recorded and this question closes automatically in 30 seconds.'
     if (mode === 'transcribing') return 'Transcribing your answer'
     if (mode === 'waiting') return 'Processing your answer'
-    if (mode === 'complete') return 'Defense complete. Generating your report'
+    if (mode === 'complete') return 'Knowledge check complete. Generating your report'
     return ''
   }
 
   if (mode === 'error') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-white text-sm text-red-500">
-        Unable to load defense session
+        Unable to load knowledge check session
       </div>
     )
   }
@@ -296,9 +296,9 @@ export default function DefenseSession() {
         <section className="flex-1 rounded-3xl border border-neutral-200 bg-white p-8">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-sm font-medium text-blue-600">Live Defense</p>
+              <p className="text-sm font-medium text-blue-600">Knowledge Check</p>
               <h1 className="mt-2 text-3xl font-medium tracking-tight text-neutral-900">
-                {session?.assignmentTitle || 'Defense session'}
+                {session?.assignmentTitle || 'Knowledge Check'}
               </h1>
             </div>
 

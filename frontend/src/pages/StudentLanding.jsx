@@ -85,7 +85,7 @@ export default function StudentLanding() {
     { label: 'Upload received', complete: true },
     { label: 'Reading your submission', complete: true },
     { label: 'Preparing concise questions', complete: true },
-    { label: 'Opening your live defense', complete: false },
+    { label: 'Opening your knowledge check', complete: false },
   ]
 
   return (
@@ -203,7 +203,7 @@ export default function StudentLanding() {
     <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
 
     <p className="text-sm text-neutral-600">
-      Preparing your defense session
+      Preparing your knowledge check session
     </p>
   </div>
 ) : null}
