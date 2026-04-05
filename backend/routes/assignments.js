@@ -18,6 +18,14 @@ oauth2Client.setCredentials({
 
 const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
+function getCalendarId() {
+  return String(process.env.GOOGLE_CALENDAR_ID || 'primary').trim() || 'primary';
+}
+
+function getCalendarOwnerEmail() {
+  return String(process.env.GOOGLE_CALENDAR_OWNER_EMAIL || '').trim().toLowerCase();
+}
+
 function getFrontendBaseUrl() {
   const configuredUrl = String(process.env.FRONTEND_URL || '').trim().replace(/\/+$/, '');
 
@@ -25,12 +33,11 @@ function getFrontendBaseUrl() {
     return configuredUrl;
   }
 
-  if (process.env.NODE_ENV === 'production' || process.env.K_SERVICE) {
-    console.warn('[assignments] FRONTEND_URL is missing; falling back to https://defendly.web.app');
-    return 'https://defendly.web.app';
+  if (process.env.NODE_ENV === 'dev') {
+    return 'http://localhost:5173';
   }
 
-  return 'http://localhost:5173';
+  return 'https://defendly.web.app';
 }
 
 function normalizeCustomStudents(customStudents = []) {
@@ -60,6 +67,14 @@ function mergeStudents(defaultStudents, customStudents) {
   }
 
   return merged;
+}
+
+function getDefaultStudents() {
+  if (process.env.ENABLE_DEMO_STUDENTS === 'true') {
+    return STUDENTS;
+  }
+
+  return [];
 }
 
 async function buildAssignmentView(doc) {
@@ -124,7 +139,10 @@ router.post('/', async (req, res) => {
     }
 
     const assignmentId = uuidv4();
-    const mergedStudents = mergeStudents(STUDENTS, normalizeCustomStudents(customStudents));
+    const mergedStudents = mergeStudents(getDefaultStudents(), normalizeCustomStudents(customStudents));
+    if (!mergedStudents.length) {
+      return res.status(400).json({ error: 'At least one student is required' });
+    }
     const studentTokens = Object.fromEntries(
       mergedStudents.map((student) => [
         uuidv4(),
@@ -160,10 +178,21 @@ router.post('/', async (req, res) => {
       console.log(`[assignments] ${invitee.name} <${invitee.email}> -> ${invitee.submitUrl}`);
     }
 
+    const calendarId = getCalendarId();
+    const calendarOwnerEmail = getCalendarOwnerEmail();
+
+    if (calendarOwnerEmail && tokens.some((invitee) => invitee.email === calendarOwnerEmail)) {
+      console.warn(
+        `[assignments] ${calendarOwnerEmail} matches the calendar owner. ` +
+        'That account will still see all events created on that calendar.'
+      );
+    }
+
     for (const invitee of tokens) {
       try {
         await calendar.events.insert({
-          calendarId: 'primary',
+          calendarId,
+          sendUpdates: 'all',
           requestBody: {
             summary: `AfterProof assignment: ${title}`,
             description: `Submit your work here: ${invitee.submitUrl}`,

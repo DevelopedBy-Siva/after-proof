@@ -95,7 +95,7 @@ jobs:
             --memory 1Gi \
             --timeout 300 \
             --service-account ${{ secrets.GCP_SERVICE_ACCOUNT }} \
-            --set-env-vars "GOOGLE_PROJECT_ID=${{ env.PROJECT_ID }},VERTEX_AI_LOCATION=${{ env.REGION }},GEMINI_MODEL=gemini-2.0-flash,GCS_BUCKET=defendly-submissions,AGENT_SERVICE_URL=https://defendly-agents-513251403701.us-central1.run.app,FRONTEND_URL=https://defendly.web.app,GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }},GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }},GOOGLE_CALENDAR_REFRESH_TOKEN=${{ secrets.GOOGLE_CALENDAR_REFRESH_TOKEN }},BASE_URL=https://defendly-api-513251403701.us-central1.run.app"
+            --set-env-vars "GOOGLE_PROJECT_ID=${{ env.PROJECT_ID }},VERTEX_AI_LOCATION=${{ env.REGION }},GEMINI_MODEL=gemini-2.0-flash,GCS_BUCKET=defendly-submissions,AGENT_SERVICE_URL=https://defendly-agents-513251403701.us-central1.run.app,FRONTEND_URL=https://defendly.web.app,GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }},GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }},GOOGLE_CALENDAR_REFRESH_TOKEN=${{ secrets.GOOGLE_CALENDAR_REFRESH_TOKEN }},GOOGLE_CALENDAR_ID=${{ secrets.GOOGLE_CALENDAR_ID }},GOOGLE_CALENDAR_OWNER_EMAIL=${{ secrets.GOOGLE_CALENDAR_OWNER_EMAIL }},BASE_URL=https://defendly-api-513251403701.us-central1.run.app"
 
   deploy-frontend:
     name: Deploy Frontend

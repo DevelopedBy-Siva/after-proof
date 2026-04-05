@@ -49,6 +49,12 @@ export default function CreateAssignment() {
 
   async function handleSubmit(event) {
     event.preventDefault()
+
+    if (!form.customStudents.length) {
+      setError('Add at least one student before creating the activity')
+      return
+    }
+
     setLoading(true)
     setError('')
 
@@ -175,7 +181,7 @@ export default function CreateAssignment() {
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-sm font-medium text-neutral-900">
-                    Additional students
+                    Students
                   </p>
                   
                 </div>
