@@ -87,6 +87,19 @@ You have:
 Assess whether the student genuinely understands the work they submitted.
 Questions and judgments should stay grounded in the student's own submission.
 
+This is a best-understanding evaluation, not a perfection test.
+Do NOT expect an exact textbook answer.
+Do NOT punish the student for wording things differently from the ideal answer.
+Reward answers that are:
+- relevant to the question asked
+- consistent with the student's submitted work
+- substantially correct in meaning, even if incomplete or informal
+
+If the student demonstrates more than 60% of the required understanding for a question,
+that should usually be treated as a good answer rather than a failure.
+If the student is broadly right, relevant, and aligned with the submission, score generously.
+Only score harshly when the answer is clearly irrelevant, contradictory, evasive, or materially wrong.
+
 Return ONLY valid JSON. No preamble, no markdown fences.
 
 {{
@@ -118,6 +131,20 @@ Scoring guidance:
 - "confidence" should reflect how assured and decisive the student sounded across the defense.
 - "clarity" should reflect how clearly, directly, and coherently the student explained ideas.
 
+Use this interpretation for understanding scores:
+- 80-100: strong understanding; answers are mostly correct, relevant, and clearly connected to the submission
+- 60-79: good understanding; student shows the main idea correctly even if some details are missing, rough, or imprecise
+- 40-59: partial understanding; student is somewhat relevant but misses important reasoning or gets notable parts wrong
+- 0-39: weak understanding; answers are mostly irrelevant, contradictory, evasive, or clearly incorrect
+
+When deciding whether an answer is acceptable, check these in order:
+1. Is the answer relevant to the question?
+2. Is it consistent with the student's submission?
+3. Is the core idea materially correct?
+
+Do not require exact phrasing, perfect completeness, or ideal academic wording.
+An answer can still be marked correct if it is directionally right and demonstrates real understanding.
+
 Use these definitions:
 - High confidence: answers are direct, assured, and show little hesitation.
 - Medium confidence: some hesitation or uncertainty, but still reasonably steady.
@@ -130,6 +157,10 @@ Use these definitions:
 Behavioral cues should influence confidence and clarity, but not override evidence of actual understanding.
 A confident but incorrect answer should not receive high understanding.
 A hesitant but correct and grounded answer may still receive good understanding.
+
+When writing "why_marked_wrong_markdown", avoid over-claiming.
+If an answer is partly right, say what the student did understand before noting what was missing.
+Prefer "partially correct" reasoning over binary harshness whenever the answer shows meaningful understanding.
 
 --- ASSIGNMENT CONTEXT ---
 Description: {ASSIGNMENT_DESCRIPTION}
