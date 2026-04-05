@@ -1,6 +1,7 @@
 const { Firestore, FieldValue } = require('@google-cloud/firestore');
 
 const db = new Firestore({ projectId: process.env.GOOGLE_PROJECT_ID });
+const MAX_ASKS = 4;
 
 module.exports = function registerDefenseNamespace(io) {
   const defense = io.of('/defense');
@@ -19,7 +20,6 @@ module.exports = function registerDefenseNamespace(io) {
         const submission = submissionDoc.data();
         const questions = submission.questions || [];
         const transcript = session.transcript || [];
-        const maxAsks = 4;
 
         if (session.status === 'complete' || submission.status === 'evaluating' || submission.status === 'complete') {
           socket.emit('session_complete', { reportId: submission.reportId || null });
@@ -46,10 +46,10 @@ module.exports = function registerDefenseNamespace(io) {
         socket.emit('session_ready', {
           questions,
           totalCount: questions.length,
-          maxAsks,
+          maxAsks: MAX_ASKS,
         });
 
-        if (transcript.length >= maxAsks || socket.data.currentIndex >= questions.length) {
+        if (transcript.length >= MAX_ASKS || socket.data.currentIndex >= questions.length) {
           socket.emit('session_complete', { reportId: submission.reportId || null });
           return;
         }
@@ -114,7 +114,7 @@ module.exports = function registerDefenseNamespace(io) {
           }),
         });
 
-        if (askedCount >= maxAsks) {
+        if (askedCount >= MAX_ASKS) {
           socket.data.completed = true;
           socket.emit('session_complete', { reportId: submission.reportId || null });
           return;
