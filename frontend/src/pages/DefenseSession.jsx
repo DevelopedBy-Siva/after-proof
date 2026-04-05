@@ -21,14 +21,15 @@ export default function DefenseSession() {
   const [liveTranscript, setLiveTranscript] = useState('')
   const [feed, setFeed] = useState([])
   const [timeLeft, setTimeLeft] = useState(600)
+  const [timerRunning, setTimerRunning] = useState(false)
 
   useEffect(() => {
     const timerId = window.setInterval(() => {
-      setTimeLeft((current) => Math.max(current - 1, 0))
+      setTimeLeft((current) => (timerRunning ? Math.max(current - 1, 0) : current))
     }, 1000)
 
     return () => window.clearInterval(timerId)
-  }, [])
+  }, [timerRunning])
 
   useEffect(() => {
     api.get(`/api/session/${sessionId}`)
@@ -40,10 +41,6 @@ export default function DefenseSession() {
   }, [sessionId])
 
   useEffect(() => {
-    if (!session) {
-      return undefined
-    }
-
     const socket = createDefenseSocket()
     const Recognition = getRecognition()
     socketRef.current = socket
@@ -54,7 +51,7 @@ export default function DefenseSession() {
 
     socket.on('session_ready', ({ totalCount }) => {
       setQuestionTotal(totalCount)
-      setMode('ready')
+      setMode('priming')
     })
 
     socket.on('ask_question', async ({ text, index, total }) => {
@@ -64,6 +61,7 @@ export default function DefenseSession() {
       setLiveTranscript('')
       transcriptRef.current = ''
       setMode('speaking')
+      setTimerRunning(true)
       await speak(text)
       startListening(Recognition, socket)
     })
@@ -79,6 +77,7 @@ export default function DefenseSession() {
 
     socket.on('session_complete', async ({ reportId }) => {
       setMode('complete')
+      setTimerRunning(false)
       const response = await api.post(`/api/session/${sessionId}/end`, { recordingGcsUrl: null })
       navigate(`/score/${reportId || response.data.reportId}`)
     })
@@ -87,9 +86,22 @@ export default function DefenseSession() {
       stopListening()
       socket.disconnect()
     }
-  }, [session, sessionId, navigate])
+  }, [sessionId, navigate])
 
   async function speak(text) {
+    if ('speechSynthesis' in window) {
+      await new Promise((resolve) => {
+        const utterance = new SpeechSynthesisUtterance(text)
+        utterance.rate = 1.02
+        utterance.pitch = 1
+        utterance.onend = resolve
+        utterance.onerror = resolve
+        window.speechSynthesis.cancel()
+        window.speechSynthesis.speak(utterance)
+      })
+      return
+    }
+
     try {
       const response = await api.post('/api/tts', { text })
       const audio = new Audio(`data:${response.data.mimeType};base64,${response.data.audioBase64}`)
@@ -182,7 +194,8 @@ export default function DefenseSession() {
               ))}
             </div>
             <p className="mt-6 text-center text-sm text-slate-400">
-              {mode === 'ready' && 'The AI will ask each question aloud.'}
+              {mode === 'loading' && 'Loading your live defense session...'}
+              {mode === 'priming' && 'Preparing the first question...'}
               {mode === 'speaking' && 'Question playing...'}
               {mode === 'listening' && 'Speak your answer and press done when finished.'}
               {mode === 'waiting' && 'Processing your answer...'}
