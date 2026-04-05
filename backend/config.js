@@ -5,9 +5,8 @@ const PROF = {
 };
 
 const STUDENTS = [
-  { name: 'Alex Chen', email: 'alex@uni.edu' },
-  { name: 'Priya Mehta', email: 'priya@uni.edu' },
-  { name: 'Jordan Blake', email: 'jordan@uni.edu' },
+  { name: 'Alex Chen', email: 'playwith.duke@asu.com' },
+  { name: 'James Bond', email: 'jamesbond@asu.com' },
 ];
 
 module.exports = {

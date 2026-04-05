@@ -34,7 +34,7 @@ export default function ProfDashboard() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <div>
             <p className="text-xs uppercase tracking-[0.35em] text-amber-400">Defendly</p>
-            <h1 className="mt-1 text-xl font-semibold">Professor Dashboard</h1>
+            {/* <h1 className="mt-1 text-xl font-semibold">Professor Dashboard</h1> */}
           </div>
           <div className="flex items-center gap-4">
             <Link to="/assignments/new" className="rounded-full bg-amber-400 px-4 py-2 text-sm font-medium text-neutral-950 transition hover:bg-amber-300">
@@ -59,13 +59,21 @@ export default function ProfDashboard() {
         <div className="space-y-6">
           {assignments.map((assignment) => (
             <section key={assignment.id} className="rounded-3xl border border-neutral-800 bg-neutral-900 p-6">
-              <h2 className="text-2xl font-semibold">{assignment.title}</h2>
-              <p className="mt-2 max-w-3xl text-sm text-neutral-400">{assignment.description}</p>
-              {assignment.additionalDetails ? (
-                <p className="mt-2 max-w-3xl text-sm text-neutral-500">Additional details included</p>
-              ) : null}
+              <div className="flex items-center gap-2">
+  <h2 className="text-2xl font-semibold">{assignment.title}</h2>
+
+  <div className="group relative">
+    <span className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-full bg-neutral-700 text-xs text-neutral-300">
+      ?
+    </span>
+
+    <div className="pointer-events-none absolute left-1/2 top-7 z-10 w-72 -translate-x-1/2 rounded-lg border border-neutral-800 bg-neutral-900 p-3 text-xs text-neutral-300 opacity-0 shadow-lg transition group-hover:opacity-100">
+      {assignment.description}
+    </div>
+  </div>
+</div>
               <p className="mt-3 text-xs uppercase tracking-[0.25em] text-neutral-500">
-                Difficulty {assignment.difficulty} • Due {new Date(assignment.deadline).toLocaleString()}
+                Due {new Date(assignment.deadline).toLocaleString()}
               </p>
 
               <div className="mt-6 overflow-hidden rounded-2xl border border-neutral-800">

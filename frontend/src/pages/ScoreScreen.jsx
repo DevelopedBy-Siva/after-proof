@@ -36,7 +36,7 @@ export default function ScoreScreen() {
     <div className="min-h-screen bg-neutral-950 text-white">
       <div className="mx-auto max-w-5xl px-6 py-12">
         <p className="text-xs uppercase tracking-[0.35em] text-amber-400">
-          {viewer === 'prof' ? 'Professor Report' : 'Student Report'}
+          Report
         </p>
         <h1 className="mt-3 text-3xl font-semibold">{report.studentName}</h1>
 
