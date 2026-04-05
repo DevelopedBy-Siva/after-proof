@@ -5,9 +5,9 @@ const PROF = {
 };
 
 const STUDENTS = [
-  { name: 'Neo', email: 'developedby.siva@gmail.com' },
+  { name: 'Siva', email: 'developedby.siva@gmail.com' },
   { name: 'Maximus', email: 'ima.technophyle@gmail.com' },
-  { name: 'Dante', email: 'sushanth.2942000@gmail.com' },
+  { name: 'Sushanth', email: 'sushanth.2942000@gmail.com' },
 
 ];
 
