@@ -29,4 +29,8 @@ def run_designer(
             text = text[4:]
 
     parsed = json.loads(text.strip())
+
+    if isinstance(parsed, list):
+        parsed = {'questions': parsed}
+
     return QuestionSet.model_validate(parsed).model_dump()

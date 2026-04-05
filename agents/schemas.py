@@ -34,7 +34,9 @@ class QAReview(BaseModel):
 
 
 class EvalReport(BaseModel):
-    overall_score: int
+    understanding: int
+    confidence: Literal['High', 'Medium', 'Low']
+    clarity: Literal['High', 'Medium', 'Low']
     ai_conclusion: str
     student_summary_markdown: str
     professor_summary_markdown: str

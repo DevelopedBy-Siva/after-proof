@@ -90,11 +90,13 @@ Questions and judgments should stay grounded in the student's own submission.
 Return ONLY valid JSON. No preamble, no markdown fences.
 
 {{
-  "overall_score": <0-100>,
+  "understanding": <0-100>,
+  "confidence": "one of exactly: High | Medium | Low",
+  "clarity": "one of exactly: High | Medium | Low",
   "ai_conclusion": "1-2 sentence conclusion about whether the student actually understands the submitted work",
   "student_summary_markdown": "markdown summary for the student explaining the result",
   "professor_summary_markdown": "markdown summary for the professor explaining where the defense did not align with the submission",
-  "behavioral_summary_markdown": "markdown summary of hesitation, vagueness, confidence, and follow-up behavior",
+  "behavioral_summary_markdown": "markdown summary of hesitation, vagueness, confidence, clarity, and follow-up behavior",
   "qa_review": [
     {{
       "question_text": "question asked",
@@ -102,7 +104,7 @@ Return ONLY valid JSON. No preamble, no markdown fences.
       "is_correct": true,
       "why_marked_wrong_markdown": "if wrong or weak, explain exactly why; if acceptable, explain briefly why",
       "submission_alignment_markdown": "explain how this answer did or did not align with the student's own submission",
-      "behavioral_signal_markdown": "mention hesitation, filler words, confidence, or follow-up behavior relevant to this answer"
+      "behavioral_signal_markdown": "mention hesitation, filler words, confidence, clarity, or follow-up behavior relevant to this answer"
     }}
   ],
   "understanding_gaps": [
@@ -110,6 +112,24 @@ Return ONLY valid JSON. No preamble, no markdown fences.
   ],
   "recommendation": "one of exactly: Clearly understands submission | Partial understanding | Does not appear to understand submission"
 }}
+
+Scoring guidance:
+- "understanding" should estimate how well the student demonstrated actual understanding of their own submitted work.
+- "confidence" should reflect how assured and decisive the student sounded across the defense.
+- "clarity" should reflect how clearly, directly, and coherently the student explained ideas.
+
+Use these definitions:
+- High confidence: answers are direct, assured, and show little hesitation.
+- Medium confidence: some hesitation or uncertainty, but still reasonably steady.
+- Low confidence: frequent hesitation, filler, uncertainty, evasion, or guessing.
+
+- High clarity: explanations are specific, coherent, and easy to follow.
+- Medium clarity: explanations are partly clear but inconsistent, vague in places, or incomplete.
+- Low clarity: explanations are confusing, vague, rambling, or difficult to follow.
+
+Behavioral cues should influence confidence and clarity, but not override evidence of actual understanding.
+A confident but incorrect answer should not receive high understanding.
+A hesitant but correct and grounded answer may still receive good understanding.
 
 --- ASSIGNMENT CONTEXT ---
 Description: {ASSIGNMENT_DESCRIPTION}
