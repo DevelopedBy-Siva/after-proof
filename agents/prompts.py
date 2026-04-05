@@ -5,7 +5,7 @@ questions that test genuine understanding.
 
 Return ONLY valid JSON. No preamble, no markdown fences.
 
-{
+{{
   "key_concepts": [
     "concepts the student explicitly discusses"
   ],
@@ -25,7 +25,7 @@ Return ONLY valid JSON. No preamble, no markdown fences.
   "defensible_sections": [
     "specific passages or claims that are worth probing in a defense"
   ]
-}
+}}
 
 --- PROFESSOR'S ASSIGNMENT BRIEF ---
 Title: {ASSIGNMENT_TITLE}
@@ -56,16 +56,16 @@ For difficulty "hard":   challenge assumptions, ask what-if variants, expose gap
 
 Return ONLY valid JSON. No preamble, no markdown fences.
 
-{
+{{
   "questions": [
-    {
+    {{
       "text": "the question asked aloud to the student",
       "section_reference": "the specific part of their submission this targets",
       "rubric_criterion": "which rubric point this tests",
       "follow_up": "if their answer is vague or evasive, ask this"
-    }
+    }}
   ]
-}
+}}
 
 --- PROFESSOR'S CONTEXT ---
 Rubric: {RUBRIC}
@@ -95,7 +95,7 @@ follow-ups.
 
 Return ONLY valid JSON. No preamble, no markdown fences.
 
-{
+{{
   "overall_score": <0-100>,
   "understands": [
     "topic or concept they clearly grasped, with brief evidence"
@@ -107,15 +107,15 @@ Return ONLY valid JSON. No preamble, no markdown fences.
     "specific claim from their submission they could not defend"
   ],
   "rubric_alignment": [
-    {
+    {{
       "criterion": "rubric criterion text",
       "verdict": "demonstrated | partial | not demonstrated",
       "evidence": "brief quote or paraphrase from their answer"
-    }
+    }}
   ],
   "recommendation": "one of exactly: Clearly authored | Possibly AI-assisted but understands | AI-generated, does not understand",
   "summary": "2 sentences of plain English for the professor"
-}
+}}
 
 --- PROFESSOR'S CONTEXT ---
 Rubric: {RUBRIC}
