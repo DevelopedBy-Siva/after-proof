@@ -8,29 +8,26 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-vertexai.init(
-    project=os.getenv("GOOGLE_PROJECT_ID"),
-    location=os.getenv("VERTEX_AI_LOCATION")
-)
+PROJECT_ID = os.getenv("GOOGLE_PROJECT_ID")
+LOCATION   = os.getenv("VERTEX_AI_LOCATION")
+MODEL      = os.getenv("GEMINI_MODEL")
+
+vertexai.init(project=PROJECT_ID, location=LOCATION)
 
 def get_model():
-    return GenerativeModel(os.getenv("GEMINI_MODEL"))
+    return GenerativeModel(MODEL)
 
 def download_pdf_from_gcs(gcs_path: str) -> str:
-    """Download a PDF from GCS and extract text."""
-    # gcs_path looks like gs://bucket-name/path/to/file.pdf
-    gcs_path = gcs_path.replace("gs://", "")
+    gcs_path    = gcs_path.replace("gs://", "")
     bucket_name, blob_path = gcs_path.split("/", 1)
 
-    client = storage.Client()
+    client = storage.Client(project=PROJECT_ID)
     bucket = client.bucket(bucket_name)
-    blob = bucket.blob(blob_path)
+    blob   = bucket.blob(blob_path)
 
     pdf_bytes = blob.download_as_bytes()
-
-    # Extract text from PDF
-    reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
-    text = ""
+    reader    = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
+    text      = ""
     for page in reader.pages:
         text += page.extract_text() + "\n"
 
