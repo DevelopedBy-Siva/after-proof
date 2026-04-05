@@ -1,43 +1,33 @@
 import json
+
+from agents.prompts import ANALYST_PROMPT
+from agents.schemas import AnalystOutput
 from agents.utils import get_model
 
-def run_analyst(submission_text: str, assignment_brief: str, rubric: str, ref_docs: str = "") -> dict:
+
+def run_analyst(
+    submission_text: str,
+    assignment_title: str,
+    assignment_description: str,
+    additional_details: str,
+    reference_summary: str = '',
+) -> dict:
     model = get_model()
-
-    prompt = f"""You are an academic submission analyst.
-
-ASSIGNMENT BRIEF:
-{assignment_brief}
-
-PROFESSOR'S RUBRIC (what must be demonstrated to pass):
-{rubric}
-
-REFERENCE MATERIALS:
-{ref_docs if ref_docs else "None provided"}
-
-STUDENT SUBMISSION:
-{submission_text}
-
-Analyze the submission carefully. Return ONLY a valid JSON object with these exact keys:
-{{
-  "key_concepts": ["list of concepts the student addressed"],
-  "weak_areas": ["topics that are vague, shallow, or incorrect"],
-  "rubric_gaps": ["rubric criteria not met or poorly addressed"],
-  "methodology": "brief description of the student's approach",
-  "notable_claims": ["specific claims made that can be probed in oral defense"],
-  "overall_impression": "one sentence summary"
-}}
-
-Return JSON only. No markdown, no explanation, no backticks."""
+    prompt = ANALYST_PROMPT.format(
+        ASSIGNMENT_TITLE=assignment_title,
+        ASSIGNMENT_DESCRIPTION=assignment_description,
+        ADDITIONAL_DETAILS=additional_details or 'None provided',
+        REFERENCE_SUMMARY=reference_summary or 'None provided',
+        SUBMISSION_TEXT=submission_text,
+    )
 
     response = model.generate_content(prompt)
     text = response.text.strip()
 
-    # Strip markdown code fences if model adds them anyway
-    if text.startswith("```"):
-        text = text.split("```")[1]
-        if text.startswith("json"):
+    if text.startswith('```'):
+        text = text.split('```')[1]
+        if text.startswith('json'):
             text = text[4:]
-    text = text.strip()
 
-    return json.loads(text)
+    parsed = json.loads(text.strip())
+    return AnalystOutput.model_validate(parsed).model_dump()

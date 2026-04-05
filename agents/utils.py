@@ -25,10 +25,13 @@ def download_pdf_from_gcs(gcs_path: str) -> str:
     bucket = client.bucket(bucket_name)
     blob   = bucket.blob(blob_path)
 
-    pdf_bytes = blob.download_as_bytes()
-    reader    = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
-    text      = ""
-    for page in reader.pages:
-        text += page.extract_text() + "\n"
+    file_bytes = blob.download_as_bytes()
 
-    return text.strip()
+    if blob_path.lower().endswith(".pdf"):
+        reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
+        text = ""
+        for page in reader.pages:
+            text += (page.extract_text() or "") + "\n"
+        return text.strip()
+
+    return file_bytes.decode("utf-8", errors="ignore").strip()

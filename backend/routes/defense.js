@@ -1,94 +1,63 @@
 const router = require('express').Router();
-const textToSpeech = require('@google-cloud/text-to-speech');
-const speech = require('@google-cloud/speech');
-const { Firestore } = require('@google-cloud/firestore');
+const axios = require('axios');
+const { Firestore, FieldValue } = require('@google-cloud/firestore');
 
-const ttsClient = new textToSpeech.TextToSpeechClient();
-const sttClient = new speech.SpeechClient();
 const db = new Firestore({ projectId: process.env.GOOGLE_PROJECT_ID });
 
-// GET /api/defense/:token — get questions for this student
-router.get('/:token', async (req, res) => {
+router.get('/:sessionId', async (req, res) => {
   try {
-    const doc = await db.collection('submissions').doc(req.params.token).get();
-    if (!doc.exists) return res.status(404).json({ error: 'Invalid token' });
-
-    const submission = doc.data();
-    if (submission.status === 'pending' || submission.status === 'analyzing') {
-      return res.status(202).json({ status: submission.status, message: 'Not ready yet' });
+    const sessionDoc = await db.collection('defense_sessions').doc(req.params.sessionId).get();
+    if (!sessionDoc.exists) {
+      return res.status(404).json({ error: 'Session not found' });
     }
 
+    const session = sessionDoc.data();
+    const submissionDoc = await db.collection('submissions').doc(session.submissionId).get();
+    const submission = submissionDoc.data();
+    const assignmentDoc = await db.collection('assignments').doc(submission.assignmentId).get();
+    const assignment = assignmentDoc.data();
+
     res.json({
-      status: submission.status,
       questions: submission.questions || [],
-      studentName: submission.studentName,
+      studentName: session.studentName,
+      assignmentTitle: assignment.title,
     });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
   }
 });
 
-// POST /api/defense/tts — convert text to speech, return audio base64
-router.post('/tts', async (req, res) => {
+router.post('/:sessionId/end', async (req, res) => {
   try {
-    const { text } = req.body;
-    const [response] = await ttsClient.synthesizeSpeech({
-      input: { text },
-      voice: { languageCode: 'en-US', ssmlGender: 'NEUTRAL' },
-      audioConfig: { audioEncoding: 'MP3' },
+    const { recordingGcsUrl } = req.body;
+    const sessionRef = db.collection('defense_sessions').doc(req.params.sessionId);
+    const sessionDoc = await sessionRef.get();
+
+    if (!sessionDoc.exists) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    const session = sessionDoc.data();
+
+    await sessionRef.update({
+      status: 'complete',
+      recordingGcsUrl: recordingGcsUrl || null,
+      endedAt: FieldValue.serverTimestamp(),
     });
 
-    res.json({
-      audio: response.audioContent.toString('base64'),
-      mimeType: 'audio/mp3',
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/defense/stt — transcribe audio chunk
-router.post('/stt', async (req, res) => {
-  try {
-    const { audio } = req.body; // base64 encoded audio from browser
-
-    const [response] = await sttClient.recognize({
-      config: {
-        encoding: 'WEBM_OPUS',
-        sampleRateHertz: 48000,
-        languageCode: 'en-US',
-        enableAutomaticPunctuation: true,
-      },
-      audio: { content: audio },
-    });
-
-    const transcript = response.results
-      .map(r => r.alternatives[0].transcript)
-      .join(' ');
-
-    res.json({ transcript });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/defense/evaluate — called when session ends
-router.post('/evaluate', async (req, res) => {
-  try {
-    const { token } = req.body;
-
-    await db.collection('submissions').doc(token).update({
+    await db.collection('submissions').doc(session.submissionId).update({
       status: 'evaluating',
-      defenseCompletedAt: new Date().toISOString(),
     });
 
-    // Agent 3 will pick this up and write the report
-    // For now just acknowledge
-    res.json({ success: true, status: 'evaluating' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    const response = await axios.post(`${process.env.AGENT_SERVICE_URL}/evaluate-defense`, {
+      sessionId: req.params.sessionId,
+    });
+
+    res.json({ reportId: response.data.reportId });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
   }
 });
 

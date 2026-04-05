@@ -1,265 +1,341 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import axios from 'axios'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
+import { FileCheck, Loader2, Bot, Mic, Clock3 } from 'lucide-react'
+import api from '../lib/api'
+import { createDefenseSocket } from '../lib/socket'
 
-const API = import.meta.env.VITE_API_URL
+function getRecognition() {
+  return window.SpeechRecognition || window.webkitSpeechRecognition
+}
 
 export default function DefenseSession() {
-  const { token } = useParams()
-  const navigate  = useNavigate()
-
-  const [questions, setQuestions]     = useState([])
-  const [currentQ, setCurrentQ]       = useState(0)
-  const [phase, setPhase]             = useState('loading')
-  const [transcript, setTranscript]   = useState([])
-  const [currentText, setCurrentText] = useState('')
-  const [timeLeft, setTimeLeft]       = useState(90)
-  const [isFollowUp, setIsFollowUp]   = useState(false)
-  const [pendingAnswer, setPendingAnswer] = useState(null)
-
-  const mediaRecorderRef = useRef(null)
-  const chunksRef        = useRef([])
-  const timerRef         = useRef(null)
-  const fullTranscript   = useRef([])
-  const questionsRef     = useRef([])
-
-  const currentQRef   = useRef(0)
-  const isFollowUpRef = useRef(false)
+  const { sessionId } = useParams()
+  const navigate = useNavigate()
+  const socketRef = useRef(null)
+  const recognitionRef = useRef(null)
+  const transcriptRef = useRef('')
+  const finishingRef = useRef(false)
+  const submitAnswerRef = useRef(() => {})
+  const [session, setSession] = useState(null)
+  const [question, setQuestion] = useState('')
+  const [questionIndex, setQuestionIndex] = useState(1)
+  const [questionTotal, setQuestionTotal] = useState(0)
+  const [askNumber, setAskNumber] = useState(1)
+  const [askTotal, setAskTotal] = useState(4)
+  const [mode, setMode] = useState('loading')
+  const [liveTranscript, setLiveTranscript] = useState('')
+  const [feed, setFeed] = useState([])
+  const [timeLeft, setTimeLeft] = useState(30)
+  const [timerRunning, setTimerRunning] = useState(false)
 
   useEffect(() => {
-    axios.get(`${API}/api/defense/${token}`)
-      .then(r => {
-        setQuestions(r.data.questions)
-        questionsRef.current = r.data.questions
-        setPhase('ready')
+    api.get(`/api/session/${sessionId}`)
+      .then((response) => {
+        setSession(response.data)
+        setQuestionTotal(response.data.questions.length)
       })
-      .catch(console.error)
-  }, [token])
+      .catch(() => setMode('error'))
+  }, [sessionId])
 
-  // Speak a question then move to recording
-  const speakText = useCallback(async (text) => {
-    setPhase('speaking')
-    setCurrentText(text)
-    try {
-      const res   = await axios.post(`${API}/api/defense/tts`, { text })
-      const audio = new Audio(`data:audio/mp3;base64,${res.data.audio}`)
-      await new Promise(resolve => { audio.onended = resolve; audio.play() })
-    } catch (e) {
-      console.error('TTS failed, skipping audio', e)
+  useEffect(() => {
+    const timerId = window.setInterval(() => {
+      setTimeLeft((current) => (timerRunning ? Math.max(current - 1, 0) : current))
+    }, 1000)
+
+    return () => window.clearInterval(timerId)
+  }, [timerRunning])
+
+  useEffect(() => {
+    if (timeLeft === 0 && mode === 'listening' && !finishingRef.current) {
+      submitAnswerRef.current()
     }
-    setPhase('recording')
+  }, [timeLeft, mode])
+
+  useEffect(() => {
+    const block = (event) => event.preventDefault()
+    document.addEventListener('copy', block)
+    document.addEventListener('cut', block)
+    document.addEventListener('paste', block)
+    document.addEventListener('contextmenu', block)
+    return () => {
+      document.removeEventListener('copy', block)
+      document.removeEventListener('cut', block)
+      document.removeEventListener('paste', block)
+      document.removeEventListener('contextmenu', block)
+    }
   }, [])
 
-  // Start mic recording when phase becomes 'recording'
   useEffect(() => {
-    if (phase !== 'recording') return
-    chunksRef.current = []
-    setTimeLeft(90)
+    const socket = createDefenseSocket()
+    const Recognition = getRecognition()
+    socketRef.current = socket
 
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-      const mr = new MediaRecorder(stream)
-      mediaRecorderRef.current = mr
-      mr.ondataavailable = e => chunksRef.current.push(e.data)
-      mr.onstop = () => stream.getTracks().forEach(t => t.stop())
-      mr.start()
-
-      timerRef.current = setInterval(() => {
-        setTimeLeft(t => {
-          if (t <= 1) {
-            clearInterval(timerRef.current)
-            handleStopRecording()
-            return 0
-          }
-          return t - 1
-        })
-      }, 1000)
+    socket.on('connect', () => {
+      socket.emit('join_session', { sessionId })
     })
 
-    return () => clearInterval(timerRef.current)
-  }, [phase])
+    socket.on('session_ready', ({ totalCount, maxAsks }) => {
+      setQuestionTotal(totalCount)
+      setAskTotal(maxAsks || totalCount || 4)
+      setMode('priming')
+    })
 
-  function handleStopRecording() {
-    clearInterval(timerRef.current)
-    if (mediaRecorderRef.current?.state === 'recording') {
-      mediaRecorderRef.current.stop()
+    socket.on('ask_question', async ({ text, index, total, askNumber: nextAskNumber, askTotal: nextAskTotal }) => {
+      setQuestion(text)
+      setQuestionIndex(index)
+      setQuestionTotal(total)
+      setAskNumber(nextAskNumber || index)
+      setAskTotal(nextAskTotal || total)
+      setLiveTranscript('')
+      transcriptRef.current = ''
+      setTimeLeft(30)
+      setMode('speaking')
+      await speak(text)
+      setTimerRunning(true)
+      startListening(Recognition, socket)
+    })
+
+    socket.on('ask_followup', async ({ text, askNumber: nextAskNumber, askTotal: nextAskTotal }) => {
+      setQuestion(text)
+      setAskNumber(nextAskNumber || askNumber)
+      setAskTotal(nextAskTotal || askTotal)
+      setLiveTranscript('')
+      transcriptRef.current = ''
+      setTimeLeft(30)
+      setMode('speaking')
+      await speak(text)
+      setTimerRunning(true)
+      startListening(Recognition, socket)
+    })
+
+    socket.on('session_complete', async ({ reportId }) => {
+      if (finishingRef.current) {
+        return
+      }
+
+      finishingRef.current = true
+      setMode('complete')
+      setTimerRunning(false)
+      stopListening()
+      socket.disconnect()
+      const response = await api.post(`/api/session/${sessionId}/end`, { recordingGcsUrl: null })
+      navigate(`/score/${reportId || response.data.reportId}?viewer=student`)
+    })
+
+    return () => {
+      stopListening()
+      socket.disconnect()
     }
-    setPhase('thinking')
-    // Trigger STT after a short delay to let final chunks flush
-    setTimeout(() => setPhase('stt'), 300)
+  }, [sessionId, navigate, askNumber, askTotal])
+
+  async function speak(text) {
+    if ('speechSynthesis' in window) {
+      await new Promise((resolve) => {
+        const utterance = new SpeechSynthesisUtterance(text)
+        utterance.rate = 1.02
+        utterance.pitch = 1
+        utterance.onend = resolve
+        utterance.onerror = resolve
+        window.speechSynthesis.cancel()
+        window.speechSynthesis.speak(utterance)
+      })
+      return
+    }
+
+    try {
+      const response = await api.post('/api/tts', { text })
+      const audio = new Audio(`data:${response.data.mimeType};base64,${response.data.audioBase64}`)
+      await new Promise((resolve) => {
+        audio.onended = resolve
+        audio.play()
+      })
+    } catch {
+      await new Promise((resolve) => window.setTimeout(resolve, 300))
+    }
   }
 
-  // STT phase — transcribe the recorded audio
-  useEffect(() => {
-    if (phase !== 'stt') return
+  function startListening(Recognition, socket) {
+    setMode('listening')
 
-    async function transcribeAudio() {
-      try {
-        const blob   = new Blob(chunksRef.current, { type: 'audio/webm' })
-        const buffer = await blob.arrayBuffer()
-        const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)))
-        const res    = await axios.post(`${API}/api/defense/stt`, { audio: base64 })
-        setPendingAnswer(res.data.transcript || '(no response)')
-      } catch (e) {
-        console.error('STT failed', e)
-        setPendingAnswer('(no response)')
-      }
+    if (!Recognition) {
+      return
     }
 
-    transcribeAudio()
-  }, [phase])
-
-  // Process the answer once we have it
-  useEffect(() => {
-    if (pendingAnswer === null) return
-  
-    const qs     = questionsRef.current
-    const qIndex = currentQRef.current
-    const wasFollowUp = isFollowUpRef.current
-  
-    // Guard: don't go past the end
-    if (qIndex >= qs.length) { finishSession(); return }
-  
-    const q      = wasFollowUp ? qs[qIndex].follow_up_probe : qs[qIndex].question
-    const answer = pendingAnswer
-    setPendingAnswer(null)
-  
-    fullTranscript.current.push({ question: q, answer })
-    setTranscript([...fullTranscript.current])
-  
-    const isVague = answer.split(' ').length < 15 && !wasFollowUp
-  
-    if (isVague) {
-      isFollowUpRef.current = true
-      setIsFollowUp(true)
-      speakText(qs[qIndex].follow_up_probe)
-    } else {
-      isFollowUpRef.current = false
-      setIsFollowUp(false)
-      const next = qIndex + 1
-      // Stop exactly at the number of questions
-      if (next >= qs.length) {
-        finishSession()
-      } else {
-        currentQRef.current = next
-        setCurrentQ(next)
-        speakText(qs[next].question)
-      }
+    const recognition = new Recognition()
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .map((result) => result[0].transcript)
+        .join(' ')
+      transcriptRef.current = transcript
+      setLiveTranscript(transcript)
+      socket.emit('voice_chunk', { sessionId, text: transcript })
     }
-  }, [pendingAnswer])
 
-  async function finishSession() {
-    setPhase('done')
-
-    const transcriptText = fullTranscript.current
-      .map((t, i) => `Q${i + 1}: ${t.question}\nA: ${t.answer}`)
-      .join('\n\n')
-
-    await axios.post(`${API}/api/defense/evaluate`, { token })
-
-    const submDoc = await axios.get(`${API}/api/submissions/${token}`)
-    await axios.post('http://localhost:5001/evaluate', {
-      submissionId: token,
-      transcript:   transcriptText,
-      rubric:       submDoc.data.assignment?.rubric || '',
-    }).catch(console.error)
-
-    navigate(`/results/${token}`)
+    recognition.start()
+    recognitionRef.current = recognition
   }
 
-  if (phase === 'loading') return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-      <p className="text-gray-400">Loading defense session...</p>
-    </div>
-  )
+  function stopListening() {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop()
+      recognitionRef.current = null
+    }
+  }
+
+  function submitAnswer() {
+    if (mode !== 'listening' || finishingRef.current) {
+      return
+    }
+
+    stopListening()
+    setTimerRunning(false)
+    const answer = transcriptRef.current || '(no answer)'
+    setFeed((current) => [...current, { question, answer }])
+    socketRef.current?.emit('answer_done', { sessionId, transcript: answer })
+    setMode('waiting')
+  }
+
+  submitAnswerRef.current = submitAnswer
+
+  function formatTime(totalSeconds) {
+    const minutes = Math.floor(totalSeconds / 60)
+    const seconds = totalSeconds % 60
+    return `${minutes}:${String(seconds).padStart(2, '0')}`
+  }
+
+  function getStatusText() {
+    if (mode === 'loading') return 'Loading your defense session'
+    if (mode === 'priming') return 'Preparing the first question'
+    if (mode === 'speaking') return 'Playing the question'
+    if (mode === 'listening') return 'Speak your answer. This question closes automatically in 30 seconds.'
+    if (mode === 'waiting') return 'Processing your answer'
+    if (mode === 'complete') return 'Defense complete. Generating your report'
+    return ''
+  }
+
+  if (mode === 'error') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-white text-sm text-red-500">
+        Unable to load defense session
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white flex flex-col">
-      <div className="border-b border-gray-800 px-8 py-4 flex items-center justify-between">
-        <h1 className="font-medium">Oral Defense</h1>
-        <div className="flex items-center gap-4">
-          <span className="text-gray-400 text-sm">
-            Question {Math.min(currentQ + 1, questions.length)} of {questions.length}
-          </span>
-          {phase === 'recording' && (
-            <span className="text-red-400 text-sm font-medium">{timeLeft}s remaining</span>
-          )}
+    <div
+      className="min-h-screen bg-white text-neutral-900"
+      onCopy={(event) => event.preventDefault()}
+      onPaste={(event) => event.preventDefault()}
+      onCut={(event) => event.preventDefault()}
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      <header className="bg-white">
+        <div className="mx-auto flex max-w-6xl items-center px-8 py-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50">
+              <FileCheck className="h-5 w-5 text-blue-600" />
+            </div>
+
+            <p className="text-[1.65rem] font-medium tracking-tight text-blue-600">
+              AfterProof
+            </p>
+          </div>
         </div>
-      </div>
+      </header>
 
-      <div className="flex flex-1 gap-0">
-        <div className="flex-1 flex flex-col items-center justify-center px-8 py-12">
-
-          {phase === 'ready' && (
-            <div className="text-center max-w-lg">
-              <h2 className="text-2xl font-semibold mb-3">Ready to begin?</h2>
-              <p className="text-gray-400 mb-8">
-                The AI will read each question aloud. Answer verbally.
-                You have 90 seconds per question.
-              </p>
-              <button
-                onClick={() => speakText(questions[0].question)}
-                className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-lg font-medium transition"
-              >
-                Start Defense
-              </button>
+      <main className="mx-auto flex max-w-7xl flex-col gap-8 px-8 pb-10 pt-4 lg:flex-row">
+        <section className="flex-1 rounded-3xl border border-neutral-200 bg-white p-8">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-blue-600">Live Defense</p>
+              <h1 className="mt-2 text-3xl font-medium tracking-tight text-neutral-900">
+                {session?.assignmentTitle || 'Defense session'}
+              </h1>
             </div>
-          )}
 
-          {['speaking', 'recording', 'thinking', 'stt'].includes(phase) && (
-            <div className="w-full max-w-xl text-center">
-              <div className={`w-20 h-20 rounded-full mx-auto mb-6 flex items-center justify-center transition-all ${
-                phase === 'speaking'             ? 'bg-blue-600 animate-pulse' :
-                phase === 'recording'            ? 'bg-red-600 animate-pulse' :
-                'bg-gray-700'
-              }`}>
-                {phase === 'speaking'              && <span className="text-2xl">🔊</span>}
-                {phase === 'recording'             && <span className="text-2xl">🎤</span>}
-                {['thinking','stt'].includes(phase) && <span className="text-2xl">⏳</span>}
-              </div>
-
-              <p className="text-xs uppercase tracking-widest text-gray-500 mb-3">
-                {phase === 'speaking'              ? 'AI is asking...'          :
-                 phase === 'recording'             ? 'Your turn — speak now'    :
-                 'Processing your answer...'}
-              </p>
-
-              <p className="text-xl font-medium leading-relaxed">{currentText}</p>
-
-              {phase === 'recording' && (
-                <button
-                  onClick={handleStopRecording}
-                  className="mt-8 bg-gray-800 hover:bg-gray-700 text-white px-6 py-2 rounded-lg text-sm transition"
-                >
-                  Done answering
-                </button>
-              )}
-            </div>
-          )}
-
-          {phase === 'done' && (
-            <div className="text-center">
-              <p className="text-green-400 text-xl font-medium mb-2">Defense complete</p>
-              <p className="text-gray-400 text-sm">Generating your report...</p>
-              <div className="w-6 h-6 border-2 border-green-500 border-t-transparent rounded-full animate-spin mx-auto mt-4" />
-            </div>
-          )}
-        </div>
-
-        {transcript.length > 0 && (
-          <div className="w-80 border-l border-gray-800 px-6 py-6 overflow-y-auto">
-            <p className="text-xs uppercase tracking-widest text-gray-500 mb-4">Transcript</p>
-            <div className="flex flex-col gap-5">
-              {transcript.map((t, i) => (
-                <div key={i}>
-                  <p className="text-xs text-blue-400 mb-1">Q{i + 1}</p>
-                  <p className="text-sm text-gray-300 mb-2">{t.question}</p>
-                  <p className="text-xs text-gray-500 italic">{t.answer}</p>
-                </div>
-              ))}
+            <div className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-600">
+              <Clock3 className="h-4 w-4" />
+              {formatTime(timeLeft)}
             </div>
           </div>
-        )}
-      </div>
+
+          <div className="mt-10">
+            <p className="text-xs uppercase tracking-wide text-neutral-500">
+              Prompt {askNumber} of {askTotal}
+            </p>
+
+            <h2 className="mt-4 max-w-4xl text-3xl font-medium leading-tight text-neutral-900">
+              {question || 'Waiting for the first question...'}
+            </h2>
+          </div>
+
+          <div className="mt-10 rounded-3xl border border-neutral-200 bg-neutral-50 p-8">
+            <div className="flex items-center justify-center">
+              {mode === 'listening' ? (
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+                  <Mic className="h-6 w-6" />
+                </div>
+              ) : (
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                </div>
+              )}
+            </div>
+
+            <p className="mx-auto mt-5 max-w-2xl text-center text-sm leading-6 text-neutral-600">
+              {getStatusText()}
+            </p>
+
+            {mode === 'listening' ? (
+              <button
+                onClick={submitAnswer}
+                className="mx-auto mt-6 block rounded-full bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-blue-700"
+              >
+                Done answering
+              </button>
+            ) : null}
+          </div>
+        </section>
+
+        <aside className="w-full rounded-3xl border border-neutral-200 bg-white p-6 lg:w-[24rem]">
+          <div className="flex items-center gap-2">
+            <Bot className="h-4 w-4 text-blue-600" />
+            <p className="text-sm font-medium text-neutral-900">Transcript Feed</p>
+          </div>
+
+          <div className="mt-6 space-y-5">
+            {liveTranscript ? (
+              <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
+                <p className="text-xs uppercase tracking-wide text-neutral-500">Live</p>
+                <p className="mt-2 text-sm leading-6 text-neutral-700">{liveTranscript}</p>
+              </div>
+            ) : null}
+
+            {feed.map((entry, index) => (
+              <div
+                key={`${entry.question}-${index}`}
+                className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4"
+              >
+                <p className="text-xs uppercase tracking-wide text-neutral-500">
+                  Question
+                </p>
+                <p className="mt-2 text-sm leading-6 text-neutral-800">
+                  {entry.question}
+                </p>
+
+                <p className="mt-4 text-xs uppercase tracking-wide text-neutral-500">
+                  Answer
+                </p>
+                <p className="mt-2 text-sm leading-6 text-neutral-700">
+                  {entry.answer}
+                </p>
+              </div>
+            ))}
+          </div>
+        </aside>
+      </main>
     </div>
   )
 }

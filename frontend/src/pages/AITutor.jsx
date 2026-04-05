@@ -1,166 +1,155 @@
-import { useEffect, useState, useRef } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
-import axios from 'axios'
+import { useEffect, useRef, useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
+import { FileCheck, Bot, ArrowLeft, Loader2 } from 'lucide-react'
+import MarkdownPreview from '../components/MarkdownPreview'
+import api from '../lib/api'
 
-const API = import.meta.env.VITE_API_URL
-
-const RECOMMENDATION_STYLE = {
-  genuine_understanding:            { color: 'text-green-400',  bg: 'bg-green-950 border-green-800',  label: 'Genuine understanding' },
-  partial_understanding:            { color: 'text-yellow-400', bg: 'bg-yellow-950 border-yellow-800', label: 'Partial understanding' },
-  ai_generated_does_not_understand: { color: 'text-red-400',    bg: 'bg-red-950 border-red-800',      label: 'AI-generated — does not understand' },
-}
-
-const VERDICT_COLOR = {
-  demonstrated:     'text-green-400',
-  partial:          'text-yellow-400',
-  not_demonstrated: 'text-red-400',
-}
-
-export default function ScoreScreen() {
-  const { token }           = useParams()
-  const navigate            = useNavigate()
-  const [report, setReport] = useState(null)
-  const [displayScore, setDisplayScore] = useState(0)
-  const [loading, setLoading]           = useState(true)
-  const pollRef = useRef(null)
+export default function AITutor() {
+  const { reportId } = useParams()
+  const [history, setHistory] = useState([])
+  const [message, setMessage] = useState('')
+  const [loading, setLoading] = useState(false)
+  const messagesRef = useRef(null)
 
   useEffect(() => {
-    function fetchReport() {
-      axios.get(`${API}/api/reports/${token}`)
-        .then(r => {
-          if (r.status === 202) return // not ready yet
-          setReport(r.data.report)
-          setLoading(false)
-          clearInterval(pollRef.current)
-        })
-        .catch(console.error)
+    if (messagesRef.current) {
+      messagesRef.current.scrollTop = messagesRef.current.scrollHeight
+    }
+  }, [history, loading])
+
+  async function sendMessage(event) {
+    event.preventDefault()
+    if (!message.trim() || loading) {
+      return
     }
 
-    fetchReport()
-    pollRef.current = setInterval(fetchReport, 3000)
-    return () => clearInterval(pollRef.current)
-  }, [token])
+    const outgoing = message
+    const updatedHistory = [...history, { role: 'user', parts: [{ text: outgoing }] }]
+    setHistory(updatedHistory)
+    setMessage('')
+    setLoading(true)
 
-  // Animate score count-up
-  useEffect(() => {
-    if (!report) return
-    const target = report.overall_score
-    let current  = 0
-    const step   = Math.ceil(target / 60)
-    const timer  = setInterval(() => {
-      current = Math.min(current + step, target)
-      setDisplayScore(current)
-      if (current >= target) clearInterval(timer)
-    }, 25)
-    return () => clearInterval(timer)
-  }, [report])
-
-  if (loading) return (
-    <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center gap-4">
-      <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-      <p className="text-gray-400">Generating your report...</p>
-    </div>
-  )
-
-  const rec = RECOMMENDATION_STYLE[report.recommendation] || RECOMMENDATION_STYLE.partial_understanding
+    try {
+      const response = await api.post('/api/tutor/chat', {
+        reportId,
+        message: outgoing,
+        history: updatedHistory,
+      })
+      setHistory((current) => [
+        ...current,
+        { role: 'model', parts: [{ text: response.data.reply }] },
+      ])
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      <div className="max-w-2xl mx-auto px-8 py-12">
+    <div className="min-h-screen bg-white text-neutral-900">
+      <header className="bg-white">
+        <div className="mx-auto flex max-w-6xl items-center px-8 py-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50">
+              <FileCheck className="h-5 w-5 text-blue-600" />
+            </div>
 
-        {/* Score */}
-        <div className="text-center mb-10">
-          <p className="text-gray-400 text-sm mb-2">Overall Score</p>
-          <p className="text-8xl font-bold tabular-nums">{displayScore}</p>
-          <p className="text-gray-600 text-lg">/100</p>
+            <p className="text-[1.65rem] font-medium tracking-tight text-blue-600">
+              AfterProof
+            </p>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-4xl px-8 pb-12 pt-4">
+        <Link
+          to={`/score/${reportId}?viewer=student`}
+          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-600 transition hover:bg-neutral-50"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Link>
+
+        <div className="mt-6 max-w-2xl">
+          <h1 className="text-3xl font-medium tracking-tight text-neutral-900">
+            AI Tutor
+          </h1>
+
+          <p className="mt-2 text-sm leading-6 text-neutral-500">
+            Ask follow-up questions about your defense, understanding gaps, and
+            where your responses may not have aligned with your submission.
+          </p>
         </div>
 
-        {/* Recommendation badge */}
-        <div className={`border rounded-xl p-4 text-center mb-8 ${rec.bg}`}>
-          <p className={`font-medium ${rec.color}`}>{rec.label}</p>
-          {report.summary && (
-            <p className="text-gray-400 text-sm mt-1">{report.summary}</p>
-          )}
-        </div>
+        <section className="mt-8 rounded-3xl border border-neutral-200 bg-white p-6">
+          <div className="flex items-center gap-2">
+            <Bot className="h-4 w-4 text-blue-600" />
+            <p className="text-sm font-medium text-neutral-900">Conversation</p>
+          </div>
 
-        {/* Comprehension breakdown */}
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6">
-          <h3 className="font-medium mb-4">Comprehension Breakdown</h3>
-
-          {report.understands?.length > 0 && (
-            <div className="mb-4">
-              <p className="text-xs text-green-400 uppercase tracking-wide mb-2">Understands</p>
-              <div className="flex flex-wrap gap-2">
-                {report.understands.map((c, i) => (
-                  <span key={i} className="bg-green-950 text-green-300 text-xs px-3 py-1 rounded-full border border-green-800">
-                    {c}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {report.weak_in?.length > 0 && (
-            <div className="mb-4">
-              <p className="text-xs text-yellow-400 uppercase tracking-wide mb-2">Weak in</p>
-              <div className="flex flex-wrap gap-2">
-                {report.weak_in.map((c, i) => (
-                  <span key={i} className="bg-yellow-950 text-yellow-300 text-xs px-3 py-1 rounded-full border border-yellow-800">
-                    {c}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {report.cannot_justify?.length > 0 && (
-            <div>
-              <p className="text-xs text-red-400 uppercase tracking-wide mb-2">Cannot justify</p>
-              <div className="flex flex-wrap gap-2">
-                {report.cannot_justify.map((c, i) => (
-                  <span key={i} className="bg-red-950 text-red-300 text-xs px-3 py-1 rounded-full border border-red-800">
-                    {c}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Rubric verdicts */}
-        {report.rubric_verdicts && (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6">
-            <h3 className="font-medium mb-4">Rubric Verdicts</h3>
-            <div className="flex flex-col gap-3">
-              {Object.entries(report.rubric_verdicts).map(([criterion, verdict]) => (
-                <div key={criterion} className="flex items-center justify-between">
-                  <p className="text-sm text-gray-300">{criterion}</p>
-                  <span className={`text-xs font-medium capitalize ${VERDICT_COLOR[verdict] || 'text-gray-400'}`}>
-                    {verdict?.replace(/_/g, ' ')}
-                  </span>
+          <div
+            ref={messagesRef}
+            className="mt-6 h-[420px] overflow-y-auto pr-2"
+          >
+            <div className="space-y-4">
+              {history.length === 0 ? (
+                <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-5">
+                  <p className="text-sm leading-6 text-neutral-600">
+                    Ask where your understanding broke down, and the tutor will
+                    respond using your defense context and behavioral signals.
+                  </p>
                 </div>
-              ))}
+              ) : (
+                history.map((entry, index) => (
+                  <div
+                    key={`${entry.role}-${index}`}
+                    className={`flex ${
+                      entry.role === 'user' ? 'justify-end' : 'justify-start'
+                    }`}
+                  >
+                    <div
+                      className={`inline-block max-w-[32rem] rounded-2xl px-4 py-3 text-sm leading-6 ${
+                        entry.role === 'user'
+                          ? 'bg-blue-600 text-white'
+                          : 'border border-neutral-200 bg-neutral-50 text-neutral-700'
+                      }`}
+                    >
+                      {entry.role === 'model' ? (
+                        <MarkdownPreview content={entry.parts[0].text} />
+                      ) : (
+                        entry.parts[0].text
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+
+              {loading ? (
+                <div className="flex justify-start">
+                  <div className="inline-flex items-center rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-neutral-500">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
-        )}
 
-        {/* Actions */}
-        <div className="flex gap-3">
-          <Link
-            to={`/tutor/${token}`}
-            className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-center rounded-lg py-3 font-medium transition"
-          >
-            Talk to AI Tutor
-          </Link>
-          <Link
-            to="/dashboard"
-            className="flex-1 bg-gray-800 hover:bg-gray-700 text-white text-center rounded-lg py-3 font-medium transition"
-          >
-            Back to Dashboard
-          </Link>
-        </div>
+          <form onSubmit={sendMessage} className="mt-6 flex gap-3">
+            <input
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              placeholder="What answer made it seem like I did not understand the submission?"
+              className="flex-1 rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-neutral-400 focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+            />
 
-      </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="inline-flex min-w-[96px] items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-neutral-300"
+            >
+              Send
+            </button>
+          </form>
+        </section>
+      </main>
     </div>
   )
 }

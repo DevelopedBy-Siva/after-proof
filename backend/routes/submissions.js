@@ -1,86 +1,135 @@
 const router = require('express').Router();
-const { Firestore } = require('@google-cloud/firestore');
-const { Storage } = require('@google-cloud/storage');
 const multer = require('multer');
 const axios = require('axios');
+const { v4: uuidv4 } = require('uuid');
+const { Firestore, FieldValue } = require('@google-cloud/firestore');
+const { Storage } = require('@google-cloud/storage');
 
 const db = new Firestore({ projectId: process.env.GOOGLE_PROJECT_ID });
-const storage = new Storage();
+const storage = new Storage({ projectId: process.env.GOOGLE_PROJECT_ID });
 const upload = multer({ storage: multer.memoryStorage() });
 
-// GET /api/submissions/:token — student opens their link
+async function findAssignmentByToken(token) {
+  const snapshot = await db.collection('assignments').get();
+
+  for (const doc of snapshot.docs) {
+    const assignment = doc.data();
+    if (assignment.studentTokens?.[token]) {
+      return {
+        id: doc.id,
+        data: assignment,
+        student: assignment.studentTokens[token],
+      };
+    }
+  }
+
+  return null;
+}
+
+async function findSubmissionByToken(token) {
+  const snapshot = await db.collection('submissions').where('studentToken', '==', token).limit(1).get();
+  return snapshot.empty ? null : { id: snapshot.docs[0].id, data: snapshot.docs[0].data() };
+}
+
 router.get('/:token', async (req, res) => {
   try {
-    const submDoc = await db.collection('submissions').doc(req.params.token).get();
-    if (!submDoc.exists) return res.status(404).json({ error: 'Invalid token' });
+    const match = await findAssignmentByToken(req.params.token);
+    if (!match) {
+      return res.status(404).json({ error: 'Invalid token' });
+    }
 
-    const submission = submDoc.data();
-    const assignDoc = await db.collection('assignments').doc(submission.assignmentId).get();
-    const assignment = assignDoc.data();
+    const submission = await findSubmissionByToken(req.params.token);
+    const status = submission?.data?.status || 'pending';
+
+    if (match.student.used && !submission) {
+      return res.status(404).json({ error: 'Token already used' });
+    }
 
     res.json({
-      studentName: submission.studentName,
-      status: submission.status,
-      assignment: {
-        title: assignment.title,
-        description: assignment.description,
-        rubric: assignment.rubric,
-        difficulty: assignment.difficulty,
-        deadline: assignment.deadline,
-      }
+      assignmentTitle: match.data.title,
+      description: match.data.description,
+      additionalDetails: match.data.additionalDetails || '',
+      deadline: match.data.deadline,
+      studentName: match.student.name,
+      difficulty: match.data.difficulty,
+      status,
+      sessionId: submission?.data?.sessionId || null,
+      submissionId: submission?.id || null,
     });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
   }
 });
 
-// POST /api/submissions/:token — student uploads their PDF
 router.post('/:token', upload.single('file'), async (req, res) => {
   try {
-    const submDoc = await db.collection('submissions').doc(req.params.token).get();
-    if (!submDoc.exists) return res.status(404).json({ error: 'Invalid token' });
-
-    const submission = submDoc.data();
-    if (submission.status !== 'pending') {
-      return res.status(400).json({ error: 'Already submitted' });
+    const match = await findAssignmentByToken(req.params.token);
+    if (!match) {
+      return res.status(404).json({ error: 'Invalid token' });
     }
 
-    // Upload file to GCS
+    if (match.student.used) {
+      return res.status(400).json({ error: 'This token has already been used' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'file is required' });
+    }
+
+    const submissionId = uuidv4();
     const bucket = storage.bucket(process.env.GCS_BUCKET);
-    const fileName = `submissions/${req.params.token}/${Date.now()}_${req.file.originalname}`;
-    const file = bucket.file(fileName);
+    const objectPath = `submissions/${submissionId}/${req.file.originalname}`;
+    const object = bucket.file(objectPath);
 
-    await file.save(req.file.buffer, {
-      metadata: { contentType: req.file.mimetype }
+    await object.save(req.file.buffer, {
+      metadata: { contentType: req.file.mimetype },
     });
 
-    const gcsPath = `gs://${process.env.GCS_BUCKET}/${fileName}`;
+    const gcsFileUrl = `gs://${process.env.GCS_BUCKET}/${objectPath}`;
 
-    // Update Firestore status
-    await db.collection('submissions').doc(req.params.token).update({
+    await db.collection('submissions').doc(submissionId).set({
+      assignmentId: match.id,
+      studentToken: req.params.token,
+      studentName: match.student.name,
+      gcsFileUrl,
       status: 'analyzing',
-      gcsPath,
-      submittedAt: new Date().toISOString(),
+      createdAt: FieldValue.serverTimestamp(),
     });
 
-    // Fetch assignment for rubric + difficulty
-    const assignDoc = await db.collection('assignments').doc(submission.assignmentId).get();
-    const assignment = assignDoc.data();
+    await db.collection('assignments').doc(match.id).update({
+      [`studentTokens.${req.params.token}.used`]: true,
+    });
 
-    // Trigger agent pipeline (fire and forget)
-    axios.post(`${process.env.AGENT_SERVICE_URL}/pipeline/run`, {
-      submissionId: req.params.token,
-      assignmentId: submission.assignmentId,
-      gcsPath,
-      rubric: assignment.rubric,
-      difficulty: assignment.difficulty,
-      assignmentBrief: assignment.description,
-    }).catch(err => console.error('Pipeline trigger failed:', err.message));
+    axios.post(`${process.env.AGENT_SERVICE_URL}/run-pipeline`, {
+      submissionId,
+    }).catch((error) => {
+      console.error('Pipeline trigger failed:', error.message);
+    });
 
-    res.json({ success: true, status: 'analyzing' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    res.json({ submissionId });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/:token/status', async (req, res) => {
+  try {
+    const submission = await findSubmissionByToken(req.params.token);
+
+    if (!submission) {
+      return res.json({ status: 'pending' });
+    }
+
+    res.json({
+      status: submission.data.status,
+      sessionId: submission.data.sessionId || null,
+      reportId: submission.data.reportId || null,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
   }
 });
 

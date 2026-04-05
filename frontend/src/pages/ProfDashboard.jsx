@@ -1,140 +1,203 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
-import axios from 'axios'
+import { Link, useNavigate } from 'react-router-dom'
+import api from '../lib/api'
+import { FileCheck, Loader2 } from 'lucide-react'
 
-const API = import.meta.env.VITE_API_URL
-
-const STATUS_COLOR = {
-  pending:           'bg-gray-700 text-gray-300',
-  analyzing:         'bg-yellow-900 text-yellow-300',
-  ready_for_defense: 'bg-blue-900 text-blue-300',
-  evaluating:        'bg-purple-900 text-purple-300',
-  complete:          'bg-green-900 text-green-300',
-  error:             'bg-red-900 text-red-300',
+const STATUS_STYLES = {
+  pending: 'bg-neutral-100 text-neutral-700',
+  uploaded: 'bg-sky-50 text-sky-700',
+  analyzing: 'bg-amber-50 text-amber-700',
+  ready_for_defense: 'bg-indigo-50 text-indigo-700',
+  defending: 'bg-fuchsia-50 text-fuchsia-700',
+  evaluating: 'bg-violet-50 text-violet-700',
+  complete: 'bg-emerald-50 text-emerald-700',
 }
 
 export default function ProfDashboard() {
   const navigate = useNavigate()
   const [assignments, setAssignments] = useState([])
-  const [loading, setLoading]         = useState(true)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!localStorage.getItem('prof_authed')) navigate('/login')
-  }, [])
+    if (!sessionStorage.getItem('prof')) {
+      navigate('/login')
+      return
+    }
 
-  useEffect(() => {
-    axios.get(`${API}/api/assignments`)
-      .then(r => setAssignments(r.data))
-      .catch(console.error)
+    api
+      .get('/api/assignments')
+      .then((response) => setAssignments(response.data))
       .finally(() => setLoading(false))
-  }, [])
+  }, [navigate])
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      {/* Header */}
-      <div className="border-b border-gray-800 px-8 py-4 flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Defendly</h1>
-        <div className="flex items-center gap-4">
-          <span className="text-gray-400 text-sm">prof@defendly.com</span>
-          <Link
-            to="/assignments/new"
-            className="bg-blue-600 hover:bg-blue-500 text-white text-sm px-4 py-2 rounded-lg transition"
-          >
-            + New Assignment
-          </Link>
-          <button
-            onClick={() => { localStorage.clear(); navigate('/login') }}
-            className="text-gray-500 hover:text-gray-300 text-sm transition"
-          >
-            Logout
-          </button>
-        </div>
-      </div>
+    <div className="min-h-screen bg-white text-neutral-900">
+      <header className="border-b border-neutral-200 bg-white">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-8 py-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-50">
+              <FileCheck className="h-5 w-5 text-blue-600" />
+            </div>
 
-      {/* Content */}
-      <div className="max-w-5xl mx-auto px-8 py-10">
-        <h2 className="text-xl font-medium mb-6">Assignments</h2>
-
-        {loading && <p className="text-gray-400">Loading...</p>}
-
-        {!loading && assignments.length === 0 && (
-          <div className="text-center py-20 text-gray-600">
-            <p className="text-lg">No assignments yet</p>
-            <Link to="/assignments/new" className="text-blue-500 text-sm mt-2 inline-block">
-              Create your first assignment →
-            </Link>
+            <p className="text-[1.65rem] font-medium tracking-tight text-blue-600">
+            AfterProof
+            </p>
           </div>
-        )}
 
-        <div className="flex flex-col gap-6">
-          {assignments.map(a => (
-            <div key={a.id} className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <h3 className="font-medium text-lg">{a.title}</h3>
-                  <p className="text-gray-400 text-sm mt-1">{a.description}</p>
-                </div>
-                <span className="text-gray-500 text-xs">
-                  Due {new Date(a.deadline).toLocaleDateString()}
-                </span>
-              </div>
+          <div className="flex items-center gap-3">
+            <Link
+              to="/assignments/new"
+              className="inline-flex items-center rounded-full bg-blue-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700"
+            >
+              New activity
+            </Link>
 
-              <p className="text-gray-500 text-xs mb-4">
-                Rubric: {a.rubric}
+            <button
+              onClick={() => {
+                sessionStorage.removeItem('prof')
+                navigate('/login')
+              }}
+              className="inline-flex cursor-pointer items-center rounded-full border border-blue-200 bg-white px-5 py-2.5 text-sm font-medium text-blue-600 transition hover:bg-blue-50"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-6xl px-8 py-10">
+        {loading ? (
+          <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4">
+            <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+            <p className="text-sm font-medium text-neutral-500">
+              Loading activities...
+            </p>
+          </div>
+        ) : assignments.length === 0 ? (
+          <div className="flex min-h-[50vh] items-center justify-center">
+            <div className="w-full max-w-xl bg-white px-8 py-12 text-center">
+              <h2 className="mt-5 text-2xl font-medium tracking-tight text-neutral-900">
+                No activities yet
+              </h2>
+
+              <p className="mt-3 text-sm leading-6 text-neutral-500">
+                You have not created any activities yet. Start by creating a new
+                activity to assign students, track progress, and review reports.
               </p>
 
-              {/* Student rows */}
-              <div className="flex flex-col gap-2">
-                {a.students?.map(s => (
-                  <div
-                    key={s.token}
-                    className="flex items-center justify-between bg-gray-800 rounded-lg px-4 py-3"
-                  >
-                    <div>
-                      <span className="text-sm font-medium">{s.name}</span>
-                      <span className="text-gray-500 text-xs ml-3">{s.email}</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <StudentStatus token={s.token} />
-                      <Link
-                        to={`/results/${s.token}`}
-                        className="text-blue-400 hover:text-blue-300 text-xs transition"
-                      >
-                        View report →
-                      </Link>
-                    </div>
-                  </div>
-                ))}
+              <div className="mt-6">
+                <Link
+                  to="/assignments/new"
+                  className="inline-flex items-center rounded-full bg-blue-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700"
+                >
+                  Create new activity
+                </Link>
               </div>
             </div>
-          ))}
-        </div>
-      </div>
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {assignments.map((assignment) => (
+              <section
+                key={assignment.id}
+                className="overflow-hidden rounded-3xl border border-neutral-200 bg-white"
+              >
+                <div className="px-8 py-7">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-[1.4rem] font-medium tracking-tight text-neutral-900">
+                          {assignment.title}
+                        </h2>
+
+                        <div className="group relative">
+                          <span className="flex h-7 w-7 cursor-pointer items-center justify-center ml-2 rounded-full border border-neutral-200 bg-white text-sm font-medium text-neutral-500 transition hover:border-blue-200 hover:text-blue-600">
+                            ?
+                          </span>
+
+                          <div className="pointer-events-none absolute left-1/2 top-8 z-10 w-72 -translate-x-1/2 rounded-2xl border border-neutral-200 bg-white p-3 text-xs leading-5 text-neutral-600 opacity-0 shadow-md transition group-hover:opacity-100">
+                            {assignment.description}
+                          </div>
+                        </div>
+                      </div>
+
+                      <p className="mt-3 text-sm text-neutral-500">
+                        Due {new Date(assignment.deadline).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-7 overflow-hidden rounded-2xl border border-neutral-200">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-neutral-50 text-left">
+                        <tr className="border-b border-neutral-200">
+                          <th className="px-5 py-4 text-xs font-medium uppercase tracking-wide text-neutral-500">
+                            Student
+                          </th>
+                          <th className="px-5 py-4 text-xs font-medium uppercase tracking-wide text-neutral-500">
+                            Status
+                          </th>
+                          <th className="px-5 py-4 text-xs font-medium uppercase tracking-wide text-neutral-500">
+                            Score
+                          </th>
+                          <th className="px-5 py-4 text-xs font-medium uppercase tracking-wide text-neutral-500">
+                            Action
+                          </th>
+                        </tr>
+                      </thead>
+
+                      <tbody className="bg-white">
+                        {assignment.students.map((student) => (
+                          <tr
+                            key={student.token}
+                            className="border-b border-neutral-100 transition hover:bg-blue-50/40 last:border-b-0"
+                          >
+                            <td className="px-5 py-4">
+                              <div className="font-medium text-neutral-900">
+                                {student.name}
+                              </div>
+                              <div className="mt-1 text-xs text-neutral-500">
+                                {student.email}
+                              </div>
+                            </td>
+
+                            <td className="px-5 py-4">
+                              <span
+                                className={`inline-flex rounded-full px-3 py-1 text-xs font-medium capitalize ${STATUS_STYLES[student.status] || STATUS_STYLES.pending}`}
+                              >
+                                {student.status.replaceAll('_', ' ')}
+                              </span>
+                            </td>
+
+                            <td className="px-5 py-4 font-medium text-neutral-700">
+                              {student.understanding ?? '—'}
+                            </td>
+
+                            <td className="px-5 py-4">
+                              {student.reportId ? (
+                                <Link
+                                  to={`/score/${student.reportId}?viewer=prof`}
+                                  className="inline-flex cursor-pointer items-center rounded-full border border-blue-200 bg-white px-4 py-2 text-xs font-medium text-blue-600 transition hover:bg-blue-50 active:scale-95"
+                                >
+                                  View report
+                                </Link>
+                              ) : (
+                                <span className="text-sm text-neutral-400">
+                                  Waiting
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
+      </main>
     </div>
-  )
-}
-
-function StudentStatus({ token }) {
-  const [status, setStatus] = useState('pending')
-
-  useEffect(() => {
-    axios.get(`${API}/api/submissions/${token}`)
-      .then(r => setStatus(r.data.status))
-      .catch(() => {})
-
-    // Poll every 5 seconds
-    const interval = setInterval(() => {
-      axios.get(`${API}/api/submissions/${token}`)
-        .then(r => setStatus(r.data.status))
-        .catch(() => {})
-    }, 5000)
-
-    return () => clearInterval(interval)
-  }, [token])
-
-  return (
-    <span className={`text-xs px-2 py-1 rounded-full font-medium ${STATUS_COLOR[status] || STATUS_COLOR.pending}`}>
-      {status.replace(/_/g, ' ')}
-    </span>
   )
 }

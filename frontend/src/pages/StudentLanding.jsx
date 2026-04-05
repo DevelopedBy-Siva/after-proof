@@ -1,168 +1,213 @@
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import axios from 'axios'
-
-const API = import.meta.env.VITE_API_URL
+import { useNavigate, useParams } from 'react-router-dom'
+import { FileCheck, Loader2, Upload, ArrowUpFromLine } from 'lucide-react'
+import MarkdownPreview from '../components/MarkdownPreview'
+import api from '../lib/api'
 
 export default function StudentLanding() {
-  const { token }               = useParams()
-  const navigate                = useNavigate()
-  const [data, setData]         = useState(null)
-  const [error, setError]       = useState('')
-  const [file, setFile]         = useState(null)
+  const { token } = useParams()
+  const navigate = useNavigate()
+  const [details, setDetails] = useState(null)
+  const [file, setFile] = useState(null)
   const [uploading, setUploading] = useState(false)
-  const [uploadError, setUploadError] = useState('')
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    axios.get(`${API}/api/submissions/${token}`)
-      .then(r => setData(r.data))
-      .catch(() => setError('Invalid or expired link.'))
+    api
+      .get(`/api/submit/${token}`)
+      .then((response) => setDetails(response.data))
+      .catch(() => setError('Invalid or expired submission link'))
   }, [token])
 
-  // Poll for status change after upload
   useEffect(() => {
-    if (!data) return
-    if (data.status !== 'analyzing') return
+    if (!details || details.status !== 'analyzing') {
+      return undefined
+    }
 
-    const interval = setInterval(() => {
-      axios.get(`${API}/api/submissions/${token}`)
-        .then(r => {
-          setData(r.data)
-          if (r.data.status === 'ready_for_defense') {
-            clearInterval(interval)
-            navigate(`/defense/${token}`)
-          }
-        })
-        .catch(() => {})
+    const interval = setInterval(async () => {
+      const response = await api.get(`/api/submit/${token}/status`)
+      const status = response.data
+      setDetails((current) => ({ ...current, ...status }))
+
+      if (status.status === 'ready_for_defense' && status.sessionId) {
+        clearInterval(interval)
+        navigate(`/defense/${status.sessionId}`)
+      }
     }, 3000)
 
     return () => clearInterval(interval)
-  }, [data?.status])
+  }, [details, token, navigate])
 
-  async function handleUpload(e) {
-    e.preventDefault()
+  async function handleUpload(event) {
+    event.preventDefault()
     if (!file) return
-    setUploading(true)
-    setUploadError('')
 
+    setUploading(true)
+    setError('')
     const formData = new FormData()
     formData.append('file', file)
 
     try {
-      await axios.post(`${API}/api/submissions/${token}`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+      const response = await api.post(`/api/submit/${token}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
       })
-      setData(d => ({ ...d, status: 'analyzing' }))
-    } catch (err) {
-      setUploadError(err.response?.data?.error || 'Upload failed')
+
+      setDetails((current) => ({
+        ...current,
+        status: 'analyzing',
+        submissionId: response.data.submissionId,
+      }))
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || 'Upload failed')
     } finally {
       setUploading(false)
     }
   }
 
-  if (error) return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-      <p className="text-red-400">{error}</p>
-    </div>
-  )
+  if (error && !details) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-white px-6 text-red-500">
+        {error}
+      </div>
+    )
+  }
 
-  if (!data) return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-      <p className="text-gray-400">Loading...</p>
-    </div>
-  )
+  if (!details) {
+    return (
+      <div className="flex min-h-screen items-center justify-center gap-3 bg-white px-6 text-neutral-500">
+        <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+        <span>Loading activity...</span>
+      </div>
+    )
+  }
+
+  const analyzingSteps = [
+    { label: 'Upload received', complete: true },
+    { label: 'Reading your submission', complete: true },
+    { label: 'Preparing concise questions', complete: true },
+    { label: 'Opening your live defense', complete: false },
+  ]
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      <div className="max-w-2xl mx-auto px-8 py-12">
-
-        <h1 className="text-2xl font-semibold mb-1">
-          Hi, {data.studentName}
-        </h1>
-        <p className="text-gray-400 text-sm mb-8">
-          Submit your work below to begin your oral defense.
-        </p>
-
-        {/* Assignment details */}
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6">
-          <h2 className="font-medium text-lg mb-1">{data.assignment.title}</h2>
-          <p className="text-gray-400 text-sm mb-4">{data.assignment.description}</p>
-
-          <div className="bg-gray-800 rounded-lg p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Rubric</p>
-            <p className="text-sm text-gray-300">{data.assignment.rubric}</p>
-          </div>
-
-          <div className="flex gap-4 mt-4">
-            <div className="bg-gray-800 rounded-lg px-3 py-2">
-              <p className="text-xs text-gray-500">Difficulty</p>
-              <p className="text-sm font-medium capitalize">{data.assignment.difficulty}</p>
+    <div className="min-h-screen bg-white text-neutral-900">
+      <header className="bg-white">
+        <div className="mx-auto flex max-w-6xl items-center px-8 py-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50">
+              <FileCheck className="h-5 w-5 text-blue-600" />
             </div>
-            <div className="bg-gray-800 rounded-lg px-3 py-2">
-              <p className="text-xs text-gray-500">Deadline</p>
-              <p className="text-sm font-medium">
-                {new Date(data.assignment.deadline).toLocaleDateString()}
-              </p>
-            </div>
+
+            <p className="text-[1.65rem] font-medium tracking-tight text-blue-600">
+              AfterProof
+            </p>
           </div>
         </div>
+      </header>
 
-        {/* Upload or status */}
-        {data.status === 'pending' && (
-          <form onSubmit={handleUpload} className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-            <h3 className="font-medium mb-4">Upload your submission</h3>
+      <main className="mx-auto max-w-5xl px-8 pb-12 pt-6">
+        <section className="rounded-3xl border border-neutral-200 bg-white p-8">
+          <h1 className="text-3xl font-medium tracking-tight text-neutral-900">
+            {details.assignmentTitle}
+          </h1>
 
-            <label className="block border-2 border-dashed border-gray-700 hover:border-blue-500 rounded-xl p-8 text-center cursor-pointer transition">
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-500">
+            {details.description}
+          </p>
+
+          {details.additionalDetails ? 
+          <div className="mt-6 max-w-3xl">
+            <p className="text-xs uppercase tracking-wide text-neutral-500">
+              Additional Details
+            </p>
+            <MarkdownPreview
+              content={details.additionalDetails}
+              className="mt-3 text-sm leading-7 text-neutral-700"
+            />
+          </div>
+          :""
+          }
+
+<div className="mt-6 space-y-4">
+  <div>
+    <p className="text-xs uppercase tracking-wide text-neutral-500">
+      Due
+    </p>
+    <p className="mt-1 text-sm text-neutral-900">
+      {new Date(details.deadline).toLocaleString()}
+    </p>
+  </div>
+
+  <div>
+    <p className="text-xs uppercase tracking-wide text-neutral-500">
+      Student
+    </p>
+    <p className="mt-1 text-sm text-neutral-900">
+      {details.studentName}
+    </p>
+  </div>
+</div>
+        </section>
+
+        {details.status === 'pending' ? (
+          <form
+            onSubmit={handleUpload}
+            className="mt-8 rounded-3xl border border-neutral-200 bg-white p-8"
+          >
+            <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-300 px-6 py-12 text-center transition hover:border-blue-300 hover:bg-blue-50/30">
               <input
                 type="file"
                 accept=".pdf,.doc,.docx"
                 className="hidden"
-                onChange={e => setFile(e.target.files[0])}
+                onChange={(event) => setFile(event.target.files?.[0] || null)}
               />
-              {file
-                ? <p className="text-blue-400">{file.name}</p>
-                : <p className="text-gray-500">Click to select PDF or Word document</p>
-              }
+
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-50">
+                <Upload className="h-5 w-5 text-blue-600" />
+              </div>
+
+              <span className="mt-4 text-base font-medium text-neutral-900">
+                {file ? file.name : 'Upload your submission'}
+              </span>
+
+              <span className="mt-2 text-sm text-neutral-500">
+                PDF or Word file
+              </span>
             </label>
 
-            {uploadError && (
-              <p className="text-red-400 text-sm mt-3">{uploadError}</p>
-            )}
+            {error ? (
+              <p className="mt-4 text-sm text-red-500">{error}</p>
+            ) : null}
 
             <button
               type="submit"
               disabled={!file || uploading}
-              className="w-full mt-4 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded-lg py-3 font-medium transition"
+              className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-neutral-300"
             >
-              {uploading ? 'Uploading...' : 'Submit Assignment'}
+              {uploading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <ArrowUpFromLine className="h-4 w-4" />
+                  Submit activity
+                </>
+              )}
             </button>
           </form>
-        )}
+        ) : null}
 
-        {data.status === 'analyzing' && (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
-            <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-            <p className="text-white font-medium">Analyzing your submission...</p>
-            <p className="text-gray-500 text-sm mt-1">
-              Your defense questions are being generated. This takes about 30 seconds.
-            </p>
-          </div>
-        )}
+{details.status === 'analyzing' ? (
+  <div className="mt-10 flex flex-col items-center justify-center gap-4 text-center">
+    <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
 
-        {data.status === 'ready_for_defense' && (
-          <div className="bg-gray-900 border border-green-800 rounded-xl p-8 text-center">
-            <p className="text-green-400 font-medium text-lg mb-2">
-              Your defense session is ready
-            </p>
-            <button
-              onClick={() => navigate(`/defense/${token}`)}
-              className="bg-green-600 hover:bg-green-500 text-white rounded-lg px-6 py-3 font-medium transition mt-2"
-            >
-              Begin Defense →
-            </button>
-          </div>
-        )}
-      </div>
+    <p className="text-sm text-neutral-600">
+      Preparing your defense session
+    </p>
+  </div>
+) : null}
+      </main>
     </div>
   )
 }
