@@ -8,43 +8,57 @@ const vertexAI = new VertexAI({
   location: process.env.VERTEX_AI_LOCATION,
 });
 
-// POST /api/tutor/chat — student asks AI tutor about their results
 router.post('/chat', async (req, res) => {
   try {
-    const { token, message, history = [] } = req.body;
+    const { reportId, message, history = [] } = req.body;
 
-    const doc = await db.collection('submissions').doc(token).get();
-    if (!doc.exists) return res.status(404).json({ error: 'Not found' });
+    if (!reportId || !message) {
+      return res.status(400).json({ error: 'reportId and message are required' });
+    }
 
-    const submission = doc.data();
-    const report = submission.report;
+    const reportDoc = await db.collection('reports').doc(reportId).get();
+    if (!reportDoc.exists) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
 
-    const model = vertexAI.getGenerativeModel({
-      model: process.env.GEMINI_MODEL,
-    });
+    const report = reportDoc.data();
+    const sessionDoc = await db.collection('defense_sessions').doc(report.sessionId).get();
+    const submissionDoc = await db.collection('submissions').doc(report.submissionId).get();
+    const assignmentDoc = await db.collection('assignments').doc(report.assignmentId).get();
 
-    const systemContext = `You are a helpful academic tutor. 
-The student just completed an oral defense. Here is their evaluation report:
+    const model = vertexAI.getGenerativeModel({ model: process.env.GEMINI_MODEL });
+    const prompt = `You are an academic tutor reviewing a student's oral defense session.
+Keep answers concise, spoken-word natural, and specific to the student's actual performance.
+
+ASSIGNMENT:
+${assignmentDoc.data()?.description || ''}
+
+RUBRIC:
+${assignmentDoc.data()?.rubric || ''}
+
+COMPREHENSION REPORT:
 ${JSON.stringify(report, null, 2)}
 
-Help them understand where they went wrong and how to improve.
-Be specific — reference their actual answers from the defense.
-Be encouraging but honest.`;
+DEFENSE Q&A:
+${JSON.stringify(sessionDoc.data()?.transcript || [], null, 2)}
+
+SUBMISSION ANALYSIS:
+${JSON.stringify(submissionDoc.data()?.analysis || {}, null, 2)}`;
 
     const contents = [
-      { role: 'user', parts: [{ text: systemContext }] },
-      { role: 'model', parts: [{ text: 'I have reviewed your defense report. How can I help you understand your results?' }] },
+      { role: 'user', parts: [{ text: prompt }] },
+      { role: 'model', parts: [{ text: 'Ready to help the student understand their defense results.' }] },
       ...history,
       { role: 'user', parts: [{ text: message }] },
     ];
 
     const result = await model.generateContent({ contents });
-    const reply = result.response.candidates[0].content.parts[0].text;
+    const reply = result.response.candidates?.[0]?.content?.parts?.[0]?.text || 'I could not generate a tutor response.';
 
     res.json({ reply });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
   }
 });
 

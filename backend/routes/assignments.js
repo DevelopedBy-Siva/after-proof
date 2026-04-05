@@ -1,108 +1,145 @@
 const router = require('express').Router();
 const { v4: uuidv4 } = require('uuid');
-const { Firestore } = require('@google-cloud/firestore');
+const { Firestore, FieldValue } = require('@google-cloud/firestore');
 const { google } = require('googleapis');
+const { STUDENTS } = require('../config');
 
 const db = new Firestore({ projectId: process.env.GOOGLE_PROJECT_ID });
 
-// Google Calendar OAuth client
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
   'http://localhost'
 );
+
 oauth2Client.setCredentials({
-  refresh_token: process.env.GOOGLE_CALENDAR_REFRESH_TOKEN
+  refresh_token: process.env.GOOGLE_CALENDAR_REFRESH_TOKEN,
 });
+
 const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
-// Hardcoded student list for hackathon demo
-const STUDENTS = [
-  { name: 'Student One',  email: 'playwith.duke@gmail.com' },
-];
+async function buildAssignmentView(doc) {
+  const assignment = doc.data();
+  const students = await Promise.all(
+    Object.entries(assignment.studentTokens || {}).map(async ([token, student]) => {
+      const submissionSnapshot = await db
+        .collection('submissions')
+        .where('studentToken', '==', token)
+        .limit(1)
+        .get();
 
-// POST /api/assignments — create assignment + send calendar invites
+      const submission = submissionSnapshot.empty ? null : submissionSnapshot.docs[0].data();
+      let report = null;
+
+      if (submission?.reportId) {
+        const reportDoc = await db.collection('reports').doc(submission.reportId).get();
+        report = reportDoc.exists ? reportDoc.data() : null;
+      }
+
+      return {
+        token,
+        name: student.name,
+        email: student.email,
+        used: student.used,
+        status: submission?.status || (student.used ? 'uploaded' : 'pending'),
+        submissionId: submission?.id || null,
+        sessionId: submission?.sessionId || null,
+        reportId: submission?.reportId || null,
+        overallScore: report?.overallScore ?? null,
+      };
+    })
+  );
+
+  return {
+    id: doc.id,
+    title: assignment.title,
+    description: assignment.description,
+    rubric: assignment.rubric,
+    difficulty: assignment.difficulty,
+    deadline: assignment.deadline,
+    createdAt: assignment.createdAt,
+    referenceDocsGcs: assignment.referenceDocsGcs || [],
+    students,
+  };
+}
+
 router.post('/', async (req, res) => {
   try {
-    const { title, description, rubric, difficulty, deadline } = req.body;
-    const assignmentId = uuidv4();
-
-    // Generate a unique token per student
-    const students = STUDENTS.map(s => ({
-      ...s,
-      token: uuidv4(),
-    }));
-
-    // Save assignment to Firestore
-    await db.collection('assignments').doc(assignmentId).set({
-      id: assignmentId,
+    const {
       title,
       description,
       rubric,
       difficulty,
       deadline,
-      students,
-      createdAt: new Date().toISOString(),
-    });
+      referenceDocUrls = [],
+    } = req.body;
 
-    // Save each student submission placeholder
-    for (const student of students) {
-      await db.collection('submissions').doc(student.token).set({
-        token: student.token,
-        assignmentId,
-        studentName: student.name,
-        studentEmail: student.email,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-      });
+    if (!title || !description || !rubric || !difficulty || !deadline) {
+      return res.status(400).json({ error: 'title, description, rubric, difficulty, and deadline are required' });
     }
 
-    // Send Google Calendar invite to each student
-    for (const student of students) {
-      const submissionUrl = `${process.env.BASE_URL}/s/${student.token}`;
+    const assignmentId = uuidv4();
+    const studentTokens = Object.fromEntries(
+      STUDENTS.map((student) => [
+        uuidv4(),
+        {
+          name: student.name,
+          email: student.email,
+          used: false,
+        },
+      ])
+    );
+
+    await db.collection('assignments').doc(assignmentId).set({
+      title,
+      description,
+      rubric,
+      difficulty,
+      deadline,
+      createdAt: FieldValue.serverTimestamp(),
+      referenceDocsGcs: referenceDocUrls,
+      studentTokens,
+    });
+
+    const tokens = Object.entries(studentTokens).map(([token, student]) => ({
+      token,
+      name: student.name,
+      email: student.email,
+      submitUrl: `${process.env.BASE_URL || 'http://localhost:5173'}/submit/${token}`,
+    }));
+
+    for (const invitee of tokens) {
       try {
         await calendar.events.insert({
           calendarId: 'primary',
           requestBody: {
-            summary: `Assignment: ${title}`,
-            description: `Submit your work here:\n${submissionUrl}\n\nRubric:\n${rubric}`,
+            summary: `Defendly assignment: ${title}`,
+            description: `Submit your work here: ${invitee.submitUrl}`,
             start: { dateTime: deadline, timeZone: 'UTC' },
-            end:   { dateTime: deadline, timeZone: 'UTC' },
-            attendees: [{ email: student.email }],
+            end: { dateTime: deadline, timeZone: 'UTC' },
+            attendees: [{ email: invitee.email }],
           },
         });
-      } catch (calErr) {
-        console.warn(`Calendar invite failed for ${student.email}:`, calErr.message);
-        // Don't fail the whole request if calendar fails
+      } catch (error) {
+        console.warn(`Calendar invite failed for ${invitee.email}: ${error.message}`);
       }
     }
 
-    res.json({ success: true, assignmentId, students });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    res.json({ assignmentId, tokens });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
   }
 });
 
-// GET /api/assignments — list all assignments (prof dashboard)
-router.get('/', async (req, res) => {
+router.get('/', async (_req, res) => {
   try {
     const snapshot = await db.collection('assignments').orderBy('createdAt', 'desc').get();
-    const assignments = snapshot.docs.map(doc => doc.data());
+    const assignments = await Promise.all(snapshot.docs.map(buildAssignmentView));
     res.json(assignments);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET /api/assignments/:id — single assignment
-router.get('/:id', async (req, res) => {
-  try {
-    const doc = await db.collection('assignments').doc(req.params.id).get();
-    if (!doc.exists) return res.status(404).json({ error: 'Not found' });
-    res.json(doc.data());
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
   }
 });
 
