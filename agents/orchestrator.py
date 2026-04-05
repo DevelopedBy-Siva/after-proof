@@ -120,4 +120,10 @@ class PipelineOrchestrator:
             'endedAt': firestore.SERVER_TIMESTAMP,
         })
 
-        return {'reportId': report_id, 'report': report_doc}
+        response_report = {
+            key: value
+            for key, value in report_doc.items()
+            if key != 'generatedAt'
+        }
+
+        return {'reportId': report_id, 'report': response_report}

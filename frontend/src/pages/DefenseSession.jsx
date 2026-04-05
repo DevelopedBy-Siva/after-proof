@@ -13,6 +13,7 @@ export default function DefenseSession() {
   const socketRef = useRef(null)
   const recognitionRef = useRef(null)
   const transcriptRef = useRef('')
+  const finishingRef = useRef(false)
   const [session, setSession] = useState(null)
   const [question, setQuestion] = useState('')
   const [questionIndex, setQuestionIndex] = useState(1)
@@ -76,8 +77,15 @@ export default function DefenseSession() {
     })
 
     socket.on('session_complete', async ({ reportId }) => {
+      if (finishingRef.current) {
+        return
+      }
+
+      finishingRef.current = true
       setMode('complete')
       setTimerRunning(false)
+      stopListening()
+      socket.disconnect()
       const response = await api.post(`/api/session/${sessionId}/end`, { recordingGcsUrl: null })
       navigate(`/score/${reportId || response.data.reportId}`)
     })
@@ -145,6 +153,10 @@ export default function DefenseSession() {
   }
 
   function submitAnswer() {
+    if (mode !== 'listening' || finishingRef.current) {
+      return
+    }
+
     stopListening()
     const answer = transcriptRef.current || '(no answer)'
     setFeed((current) => [...current, { question, answer }])

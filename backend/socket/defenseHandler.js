@@ -17,10 +17,21 @@ module.exports = function registerDefenseNamespace(io) {
         const session = sessionDoc.data();
         const submissionDoc = await db.collection('submissions').doc(session.submissionId).get();
         const submission = submissionDoc.data();
+        const questions = submission.questions || [];
+        const transcript = session.transcript || [];
+
+        if (session.status === 'complete' || submission.status === 'evaluating' || submission.status === 'complete') {
+          socket.emit('session_complete', { reportId: submission.reportId || null });
+          return;
+        }
 
         socket.data.sessionId = sessionId;
-        socket.data.currentIndex = 0;
+        socket.data.currentIndex = Math.min(
+          transcript.reduce((maxIndex, entry) => Math.max(maxIndex, (entry.questionIndex ?? -1) + 1), 0),
+          questions.length
+        );
         socket.data.awaitingFollowUp = false;
+        socket.data.completed = false;
 
         await db.collection('defense_sessions').doc(sessionId).update({
           status: 'active',
@@ -32,16 +43,21 @@ module.exports = function registerDefenseNamespace(io) {
         });
 
         socket.emit('session_ready', {
-          questions: submission.questions || [],
-          totalCount: (submission.questions || []).length,
+          questions,
+          totalCount: questions.length,
         });
 
-        if ((submission.questions || []).length > 0) {
-          const first = submission.questions[0];
+        if (socket.data.currentIndex >= questions.length) {
+          socket.emit('session_complete', { reportId: submission.reportId || null });
+          return;
+        }
+
+        if (questions.length > 0) {
+          const first = questions[socket.data.currentIndex];
           socket.emit('ask_question', {
             text: first.text,
-            index: 1,
-            total: submission.questions.length,
+            index: socket.data.currentIndex + 1,
+            total: questions.length,
           });
         }
       } catch (error) {
@@ -66,7 +82,13 @@ module.exports = function registerDefenseNamespace(io) {
         const awaitingFollowUp = socket.data.awaitingFollowUp || false;
         const question = questions[currentIndex];
 
+        if (socket.data.completed || session.status === 'complete' || submission.status === 'evaluating' || submission.status === 'complete') {
+          socket.emit('session_complete', { reportId: submission.reportId || null });
+          return;
+        }
+
         if (!question) {
+          socket.data.completed = true;
           socket.emit('session_complete', { reportId: submission.reportId || null });
           return;
         }
@@ -99,6 +121,7 @@ module.exports = function registerDefenseNamespace(io) {
         socket.data.currentIndex = currentIndex + 1;
 
         if (socket.data.currentIndex >= questions.length) {
+          socket.data.completed = true;
           socket.emit('session_complete', { reportId: submission.reportId || null });
           return;
         }
