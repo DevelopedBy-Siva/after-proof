@@ -4,16 +4,23 @@ import { FileCheck, Loader2, Bot, Mic, Clock3 } from 'lucide-react'
 import api from '../lib/api'
 import { createDefenseSocket } from '../lib/socket'
 
-function getRecognition() {
-  return window.SpeechRecognition || window.webkitSpeechRecognition
+function getSupportedMimeType() {
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/ogg;codecs=opus',
+    'audio/webm',
+  ]
+
+  return candidates.find((value) => window.MediaRecorder?.isTypeSupported?.(value)) || ''
 }
 
 export default function DefenseSession() {
   const { sessionId } = useParams()
   const navigate = useNavigate()
   const socketRef = useRef(null)
-  const recognitionRef = useRef(null)
-  const transcriptRef = useRef('')
+  const mediaRecorderRef = useRef(null)
+  const mediaStreamRef = useRef(null)
+  const audioChunksRef = useRef([])
   const finishingRef = useRef(false)
   const submitAnswerRef = useRef(() => {})
   const [session, setSession] = useState(null)
@@ -23,7 +30,6 @@ export default function DefenseSession() {
   const [askNumber, setAskNumber] = useState(1)
   const [askTotal, setAskTotal] = useState(4)
   const [mode, setMode] = useState('loading')
-  const [liveTranscript, setLiveTranscript] = useState('')
   const [feed, setFeed] = useState([])
   const [timeLeft, setTimeLeft] = useState(30)
   const [timerRunning, setTimerRunning] = useState(false)
@@ -67,7 +73,6 @@ export default function DefenseSession() {
 
   useEffect(() => {
     const socket = createDefenseSocket()
-    const Recognition = getRecognition()
     socketRef.current = socket
 
     socket.on('connect', () => {
@@ -86,26 +91,22 @@ export default function DefenseSession() {
       setQuestionTotal(total)
       setAskNumber(nextAskNumber || index)
       setAskTotal(nextAskTotal || total)
-      setLiveTranscript('')
-      transcriptRef.current = ''
       setTimeLeft(30)
       setMode('speaking')
       await speak(text)
       setTimerRunning(true)
-      startListening(Recognition, socket)
+      await startListening(socket)
     })
 
     socket.on('ask_followup', async ({ text, askNumber: nextAskNumber, askTotal: nextAskTotal }) => {
       setQuestion(text)
       setAskNumber(nextAskNumber || askNumber)
       setAskTotal(nextAskTotal || askTotal)
-      setLiveTranscript('')
-      transcriptRef.current = ''
       setTimeLeft(30)
       setMode('speaking')
       await speak(text)
       setTimerRunning(true)
-      startListening(Recognition, socket)
+      await startListening(socket)
     })
 
     socket.on('session_complete', async ({ reportId }) => {
@@ -116,7 +117,7 @@ export default function DefenseSession() {
       finishingRef.current = true
       setMode('complete')
       setTimerRunning(false)
-      stopListening()
+      await stopListening()
       socket.disconnect()
       const response = await api.post(`/api/session/${sessionId}/end`, { recordingGcsUrl: null })
       navigate(`/score/${reportId || response.data.reportId}?viewer=student`)
@@ -126,27 +127,15 @@ export default function DefenseSession() {
       stopListening()
       socket.disconnect()
     }
-  }, [sessionId, navigate, askNumber, askTotal])
+  }, [sessionId, navigate])
 
   async function speak(text) {
-    if ('speechSynthesis' in window) {
-      await new Promise((resolve) => {
-        const utterance = new SpeechSynthesisUtterance(text)
-        utterance.rate = 1.02
-        utterance.pitch = 1
-        utterance.onend = resolve
-        utterance.onerror = resolve
-        window.speechSynthesis.cancel()
-        window.speechSynthesis.speak(utterance)
-      })
-      return
-    }
-
     try {
       const response = await api.post('/api/tts', { text })
       const audio = new Audio(`data:${response.data.mimeType};base64,${response.data.audioBase64}`)
       await new Promise((resolve) => {
         audio.onended = resolve
+        audio.onerror = resolve
         audio.play()
       })
     } catch {
@@ -154,47 +143,104 @@ export default function DefenseSession() {
     }
   }
 
-  function startListening(Recognition, socket) {
+  async function startListening(socket) {
     setMode('listening')
 
-    if (!Recognition) {
+    if (!window.MediaRecorder || !navigator.mediaDevices?.getUserMedia) {
+      setMode('error')
       return
     }
 
-    const recognition = new Recognition()
-    recognition.continuous = true
-    recognition.interimResults = true
-    recognition.onresult = (event) => {
-      const transcript = Array.from(event.results)
-        .map((result) => result[0].transcript)
-        .join(' ')
-      transcriptRef.current = transcript
-      setLiveTranscript(transcript)
-      socket.emit('voice_chunk', { sessionId, text: transcript })
-    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mimeType = getSupportedMimeType()
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream)
 
-    recognition.start()
-    recognitionRef.current = recognition
+      audioChunksRef.current = []
+      mediaStreamRef.current = stream
+      mediaRecorderRef.current = recorder
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data)
+        }
+      }
+
+      recorder.start(250)
+      socket.emit('voice_chunk', { sessionId, text: 'Recording answer...' })
+    } catch {
+      setMode('error')
+    }
   }
 
-  function stopListening() {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop()
-      recognitionRef.current = null
+  async function stopListening() {
+    const recorder = mediaRecorderRef.current
+    if (!recorder) {
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop())
+        mediaStreamRef.current = null
+      }
+      return null
     }
+
+    return new Promise((resolve) => {
+      recorder.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, {
+          type: recorder.mimeType || 'audio/webm',
+        })
+
+        mediaRecorderRef.current = null
+        if (mediaStreamRef.current) {
+          mediaStreamRef.current.getTracks().forEach((track) => track.stop())
+          mediaStreamRef.current = null
+        }
+
+        resolve(blob)
+      }
+
+      recorder.stop()
+    })
   }
 
-  function submitAnswer() {
+  async function transcribeAnswer(audioBlob) {
+    if (!audioBlob || audioBlob.size === 0) {
+      return ''
+    }
+
+    const formData = new FormData()
+    formData.append('audio', audioBlob, `answer.${audioBlob.type.includes('ogg') ? 'ogg' : 'webm'}`)
+
+    const response = await api.post(`/api/session/${sessionId}/transcribe`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+
+    return response.data.transcript || ''
+  }
+
+  async function submitAnswer() {
     if (mode !== 'listening' || finishingRef.current) {
       return
     }
 
-    stopListening()
     setTimerRunning(false)
-    const answer = transcriptRef.current || '(no answer)'
-    setFeed((current) => [...current, { question, answer }])
-    socketRef.current?.emit('answer_done', { sessionId, transcript: answer })
-    setMode('waiting')
+    setMode('transcribing')
+
+    try {
+      const audioBlob = await stopListening()
+      const transcript = await transcribeAnswer(audioBlob)
+      const answer = transcript || '(no answer)'
+
+      setFeed((current) => [...current, { question, answer }])
+      socketRef.current?.emit('answer_done', { sessionId, transcript: answer })
+      setMode('waiting')
+    } catch {
+      const answer = '(transcription failed)'
+      setFeed((current) => [...current, { question, answer }])
+      socketRef.current?.emit('answer_done', { sessionId, transcript: answer })
+      setMode('waiting')
+    }
   }
 
   submitAnswerRef.current = submitAnswer
@@ -209,7 +255,8 @@ export default function DefenseSession() {
     if (mode === 'loading') return 'Loading your defense session'
     if (mode === 'priming') return 'Preparing the first question'
     if (mode === 'speaking') return 'Playing the question'
-    if (mode === 'listening') return 'Speak your answer. This question closes automatically in 30 seconds.'
+    if (mode === 'listening') return 'Speak your answer. Audio is being recorded and this question closes automatically in 30 seconds.'
+    if (mode === 'transcribing') return 'Transcribing your answer'
     if (mode === 'waiting') return 'Processing your answer'
     if (mode === 'complete') return 'Defense complete. Generating your report'
     return ''
@@ -306,10 +353,21 @@ export default function DefenseSession() {
           </div>
 
           <div className="mt-6 space-y-5">
-            {liveTranscript ? (
+            {mode === 'listening' ? (
               <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
-                <p className="text-xs uppercase tracking-wide text-neutral-500">Live</p>
-                <p className="mt-2 text-sm leading-6 text-neutral-700">{liveTranscript}</p>
+                <p className="text-xs uppercase tracking-wide text-neutral-500">Recording</p>
+                <p className="mt-2 text-sm leading-6 text-neutral-700">
+                  Capturing microphone audio.
+                </p>
+              </div>
+            ) : null}
+
+            {mode === 'transcribing' ? (
+              <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
+                <p className="text-xs uppercase tracking-wide text-neutral-500">Transcribing</p>
+                <p className="mt-2 text-sm leading-6 text-neutral-700">
+                  Converting your recorded answer into text.
+                </p>
               </div>
             ) : null}
 

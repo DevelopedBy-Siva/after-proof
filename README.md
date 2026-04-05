@@ -2,13 +2,13 @@
 
 AfterProof is an AI-powered oral defense platform for academic submissions. Instead of trying to detect whether a student used AI, it verifies whether the student actually understands the work they submitted.
 
-The current implementation lets an instructor create an assignment, send one-time submission links to a fixed student list, analyze each uploaded submission with Gemini, generate targeted defense questions, run a live browser-based oral defense, evaluate the answers, and produce a review report for both student and instructor.
+The current implementation lets an instructor create an assignment, send one-time submission links to a fixed student list, analyze each uploaded submission with Gemini, generate targeted defense questions, run a live oral defense, evaluate the answers, and produce a review report for both student and instructor.
 
 ## Overview
 
 - Problem: written submissions are easy to generate, but much harder to genuinely explain.
 - Product approach: move evaluation from static submission review to an adaptive, submission-grounded defense.
-- AI role: the system reads the submission, reasons over assignment context, generates follow-up questions, and evaluates demonstrated understanding.
+- AI role: the system reads the submission, reasons over assignment context, generates follow-up questions, evaluates demonstrated understanding, and helps the student learn from the outcome.
 - Live deployment:
   - Frontend: `https://defendly.web.app`
   - Backend API: `https://defendly-api-513251403701.us-central1.run.app`
@@ -19,8 +19,8 @@ The current implementation lets an instructor create an assignment, send one-tim
 The project is split into three deployable services:
 
 1. `frontend/`: React + Vite application for instructor, student, report, and tutor flows
-2. `backend/`: Node.js API for assignments, submissions, session management, reports, TTS, tutor chat, and Socket.IO coordination
-3. `agents/`: Python Flask service that runs the Gemini-based multi-step pipeline for analysis, question design, and evaluation
+2. `backend/`: Node.js API for assignments, submissions, session management, reports, TTS, STT, tutor chat, and Socket.IO coordination
+3. `agents/`: Python Flask service that runs the Gemini-based pipeline for analysis, question design, and evaluation
 
 ## End-to-End Flow
 
@@ -34,7 +34,7 @@ The project is split into three deployable services:
    - Designer agent generates exactly 3 submission-grounded oral defense questions plus concise follow-ups.
    - Backend marks the submission `ready_for_defense` and creates a `defense_sessions` record.
 7. Student is redirected into the live defense session.
-8. The browser speaks each question, listens to the student via Web Speech recognition, streams transcript text to Socket.IO, and stores each answer in Firestore.
+8. The backend synthesizes each question with Google Cloud Text-to-Speech, the browser records the student's answer, and the backend transcribes it with Google Cloud Speech-to-Text before storing the answer in Firestore.
 9. If an answer is too vague, the socket handler asks the question-specific follow-up. A defense currently stops after a maximum of 4 asks.
 10. When the session ends, backend calls the evaluator agent, which scores understanding and generates student/professor-facing summaries.
 11. Student sees the score screen and can open an AI tutor chat grounded in their report and transcript.
@@ -50,8 +50,8 @@ flowchart LR
     B -->|Create/read app state| F[(Firestore)]
     B -->|Store submissions| G[(Google Cloud Storage)]
     B -->|Calendar invites| C[Google Calendar API]
+    B -->|Google Cloud TTS/STT| X[Speech Services]
     B -->|Trigger pipeline| P[Python Agent Service<br/>Flask]
-    B -->|Optional TTS fallback| T[Google Cloud Text-to-Speech]
 
     P -->|Read/write| F
     P -->|Read submission file| G
@@ -81,18 +81,16 @@ This is enforced in code through the prompts in [`agents/core/prompts.py`](/User
 
 The pipeline is orchestrated in [`agents/core/orchestrator.py`](/Users/sivasankernp/Desktop/defendly/agents/core/orchestrator.py).
 
-## Core Agentic Workflow
+## Core Workflow
 
-The main workflow is implemented as a multi-step agent pipeline:
+The main workflow is implemented as a multi-step AI pipeline:
 
 1. Submission ingestion: uploaded work is stored in GCS and registered in Firestore.
 2. Analyst step: Gemini extracts key concepts, claims, methodology, weak areas, assumptions, rubric gaps, and defensible sections.
 3. Designer step: Gemini generates exactly three oral defense questions with targeted follow-ups, constrained by both the submission and the assignment context.
-4. Session orchestration: the backend coordinates the live defense over Socket.IO and records each answer turn in Firestore.
+4. Session orchestration: the backend coordinates the live defense over Socket.IO, uses Google Cloud TTS/STT during the session, and records each answer turn in Firestore.
 5. Evaluator step: Gemini reviews the full Q&A transcript plus prior analysis and produces a structured understanding report.
 6. Tutor step: a separate Gemini-backed chat uses the report, transcript, and analysis to help the student understand where they struggled.
-
-This makes the AI system an active collaborator in the flow rather than a single prompt-response layer.
 
 ## Stack
 
@@ -112,9 +110,10 @@ This makes the AI system an active collaborator in the flow rather than a single
 - Express 5
 - Socket.IO
 - Multer
-- Firebase Admin / Firestore SDK
+- Firestore SDK
 - Google APIs client
 - Google Cloud Storage
+- Google Cloud Speech-to-Text
 - Google Cloud Text-to-Speech
 - Vertex AI SDK
 
@@ -160,8 +159,6 @@ The repo currently contains local `.env` files. In normal use these should be tr
 
 ### Backend
 
-Expected by [`backend/index.js`](/Users/sivasankernp/Desktop/defendly/backend/index.js) and route handlers:
-
 - `GOOGLE_PROJECT_ID`
 - `VERTEX_AI_LOCATION`
 - `GEMINI_MODEL`
@@ -176,8 +173,6 @@ Expected by [`backend/index.js`](/Users/sivasankernp/Desktop/defendly/backend/in
 
 ### Agent Service
 
-Expected by [`agents/core/main.py`](/Users/sivasankernp/Desktop/defendly/agents/core/main.py) and [`agents/core/utils.py`](/Users/sivasankernp/Desktop/defendly/agents/core/utils.py):
-
 - `GOOGLE_PROJECT_ID`
 - `VERTEX_AI_LOCATION`
 - `GEMINI_MODEL`
@@ -185,8 +180,6 @@ Expected by [`agents/core/main.py`](/Users/sivasankernp/Desktop/defendly/agents/
 - `PORT`
 
 ### Frontend
-
-Expected by [`frontend/src/lib/api.js`](/Users/sivasankernp/Desktop/defendly/frontend/src/lib/api.js) and [`frontend/src/lib/socket.js`](/Users/sivasankernp/Desktop/defendly/frontend/src/lib/socket.js):
 
 - `VITE_API_URL`
 - `VITE_SOCKET_URL`
@@ -197,7 +190,7 @@ Expected by [`frontend/src/lib/api.js`](/Users/sivasankernp/Desktop/defendly/fro
 
 - Node.js 20+
 - Python 3.13+
-- Google Cloud project with Firestore, Cloud Storage, and Vertex AI enabled
+- Google Cloud project with Firestore, Cloud Storage, Vertex AI, Speech-to-Text, and Text-to-Speech enabled
 - Firebase Hosting configured for the frontend
 - Google Calendar API credentials if invite flow needs to work locally
 
@@ -239,13 +232,6 @@ On every push to `main`:
 4. Deploy backend API to Cloud Run as `defendly-api`
 5. Install frontend dependencies, build the Vite app, and deploy `frontend/dist` to Firebase Hosting
 
-Notable deployment details from the workflow:
-
-- region: `us-central1`
-- backend and agent services are deployed as unauthenticated Cloud Run services
-- frontend build injects hosted API and socket URLs
-- Firebase Hosting uses SPA rewrites so client-side routes work correctly
-
 ## Current Capabilities
 
 - Instructor assignment creation flow
@@ -255,29 +241,23 @@ Notable deployment details from the workflow:
 - Firestore-backed assignment, submission, defense session, and report state
 - Gemini-driven submission analysis
 - Gemini-driven question generation with follow-up prompts
-- Live oral defense over browser speech + Socket.IO
+- Live oral defense over Google Cloud TTS/STT + Socket.IO
 - Automatic evaluation report with qualitative summaries
 - Instructor dashboard for tracking progress and viewing reports
 - Student-facing AI tutor chat grounded in the report, transcript, and analysis
 
 ## Known Limitations
 
-These are current implementation constraints worth knowing before extending the project:
-
 - Demo auth is hardcoded in [`frontend/src/pages/ProfLogin.jsx`](/Users/sivasankernp/Desktop/defendly/frontend/src/pages/ProfLogin.jsx) and [`backend/config.js`](/Users/sivasankernp/Desktop/defendly/backend/config.js).
 - Student roster is fixed in code, not managed through a database UI.
 - Submission token lookup currently scans assignments in Firestore instead of using a token index.
 
 
-
-
-
 ## Key Files
-
-If you want to inspect the most important implementation files first, start here:
 
 - [`backend/routes/assignments.js`](/Users/sivasankernp/Desktop/defendly/backend/routes/assignments.js)
 - [`backend/routes/submissions.js`](/Users/sivasankernp/Desktop/defendly/backend/routes/submissions.js)
+- [`backend/routes/defense.js`](/Users/sivasankernp/Desktop/defendly/backend/routes/defense.js)
 - [`backend/socket/defenseHandler.js`](/Users/sivasankernp/Desktop/defendly/backend/socket/defenseHandler.js)
 - [`agents/core/orchestrator.py`](/Users/sivasankernp/Desktop/defendly/agents/core/orchestrator.py)
 - [`agents/core/prompts.py`](/Users/sivasankernp/Desktop/defendly/agents/core/prompts.py)
@@ -288,8 +268,9 @@ If you want to inspect the most important implementation files first, start here
 
 - replace demo auth with real instructor/student authentication
 - move fixed student roster into database-backed class management
-- support real recording upload and playback from GCS
-
+- support full session recording upload and playback from GCS
+- add automated tests for core routes and agent orchestration
+- support richer assignment inputs such as direct file uploads for references
 
 ## Summary
 
