@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import MarkdownPreview from '../components/MarkdownPreview'
 import api from '../lib/api'
 
 export default function StudentLanding() {
@@ -74,13 +75,13 @@ export default function StudentLanding() {
   const analyzingSteps = [
     { label: 'Upload received', complete: true },
     { label: 'Reading your submission', complete: true },
-    { label: 'Grounding questions in the rubric', complete: true },
+    { label: 'Preparing concise questions', complete: true },
     { label: 'Opening your live defense', complete: false },
   ]
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.18),_transparent_35%),linear-gradient(180deg,_#0a0a0a,_#171717)] text-white">
-      <div className="mx-auto max-w-3xl px-6 py-12">
+      <div className="mx-auto max-w-4xl px-6 py-12">
         <p className="text-xs uppercase tracking-[0.35em] text-amber-400">Submission Link</p>
         <h1 className="mt-3 text-4xl font-semibold">{details.assignmentTitle}</h1>
         <p className="mt-3 text-neutral-300">{details.description}</p>
@@ -89,8 +90,8 @@ export default function StudentLanding() {
           <p className="text-sm text-neutral-400">Student</p>
           <p className="mt-1 text-lg font-medium">{details.studentName}</p>
           <div className="mt-5 rounded-2xl bg-neutral-950 p-4">
-            <p className="text-xs uppercase tracking-[0.25em] text-neutral-500">Rubric</p>
-            <p className="mt-2 whitespace-pre-wrap text-sm text-neutral-300">{details.rubric}</p>
+            <p className="text-xs uppercase tracking-[0.25em] text-neutral-500">Additional Details</p>
+            <MarkdownPreview content={details.additionalDetails || 'No additional details provided.'} className="mt-2 text-sm text-neutral-300" />
           </div>
           <p className="mt-4 text-sm text-neutral-400">Deadline: {new Date(details.deadline).toLocaleString()}</p>
         </div>
@@ -122,7 +123,7 @@ export default function StudentLanding() {
           <div className="mt-8 rounded-3xl border border-amber-900 bg-amber-950/30 p-6">
             <p className="text-lg font-medium text-amber-300">Preparing your defense session</p>
             <p className="mt-2 text-sm text-amber-100/70">
-              Defendly is reading your submission and generating questions grounded in your work and the rubric.
+              Defendly is checking whether you understand the submission you turned in.
             </p>
             <div className="mt-5 h-3 overflow-hidden rounded-full bg-neutral-950">
               <div className="h-full w-4/5 rounded-full bg-amber-400 transition-all duration-700" />
@@ -135,19 +136,6 @@ export default function StudentLanding() {
                 </div>
               ))}
             </div>
-          </div>
-        ) : null}
-
-        {details.status === 'ready_for_defense' && details.sessionId ? (
-          <div className="mt-8 rounded-3xl border border-emerald-900 bg-emerald-950/30 p-6">
-            <p className="text-lg font-medium text-emerald-300">Your defense session is ready</p>
-            <p className="mt-2 text-sm text-emerald-100/70">Redirecting you into the live defense now...</p>
-            <button
-              onClick={() => navigate(`/defense/${details.sessionId}`)}
-              className="mt-4 rounded-2xl bg-emerald-400 px-5 py-3 font-medium text-neutral-950 transition hover:bg-emerald-300"
-            >
-              Start defense session
-            </button>
           </div>
         ) : null}
       </div>

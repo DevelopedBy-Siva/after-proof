@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import MarkdownPreview from '../components/MarkdownPreview'
 import api from '../lib/api'
 
 export default function AITutor() {
@@ -40,7 +41,7 @@ export default function AITutor() {
             <p className="text-xs uppercase tracking-[0.35em] text-amber-400">AI Tutor</p>
             <h1 className="mt-2 text-3xl font-semibold">Review Your Defense</h1>
           </div>
-          <Link to={`/score/${reportId}`} className="text-sm text-neutral-400 transition hover:text-white">
+          <Link to={`/score/${reportId}?viewer=student`} className="text-sm text-neutral-400 transition hover:text-white">
             Back to score
           </Link>
         </div>
@@ -49,7 +50,7 @@ export default function AITutor() {
           <div className="space-y-4">
             {history.length === 0 ? (
               <p className="text-neutral-400">
-                Ask where your understanding broke down, and the tutor will answer using your actual defense report.
+                Ask where your understanding broke down, and the tutor will answer using the defense context and behavioral signals.
               </p>
             ) : history.map((entry, index) => (
               <div
@@ -58,7 +59,7 @@ export default function AITutor() {
                   entry.role === 'user' ? 'ml-auto bg-amber-400 text-neutral-950' : 'bg-neutral-950 text-neutral-200'
                 }`}
               >
-                {entry.parts[0].text}
+                {entry.role === 'model' ? <MarkdownPreview content={entry.parts[0].text} /> : entry.parts[0].text}
               </div>
             ))}
           </div>
@@ -67,7 +68,7 @@ export default function AITutor() {
             <input
               value={message}
               onChange={(event) => setMessage(event.target.value)}
-              placeholder="What did I get wrong on the learning rate question?"
+              placeholder="What answer made it seem like I did not understand the submission?"
               className="flex-1 rounded-2xl border border-neutral-700 bg-neutral-950 px-4 py-3 outline-none transition focus:border-amber-400"
             />
             <button

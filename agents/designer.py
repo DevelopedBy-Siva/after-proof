@@ -7,16 +7,16 @@ from agents.utils import get_model
 
 def run_designer(
     analyst_output: dict,
-    rubric: str,
     assignment_description: str,
+    additional_details: str,
     difficulty: str = 'medium',
 ) -> dict:
     model = get_model()
     prompt = QUESTION_PROMPT.format(
         N=3,
         DIFFICULTY=difficulty,
-        RUBRIC=rubric,
         ASSIGNMENT_DESCRIPTION=assignment_description,
+        ADDITIONAL_DETAILS=additional_details or 'None provided',
         ANALYSIS_JSON=json.dumps(analyst_output, indent=2),
     )
 

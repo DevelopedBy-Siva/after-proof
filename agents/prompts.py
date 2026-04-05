@@ -20,7 +20,7 @@ Return ONLY valid JSON. No preamble, no markdown fences.
     "things the student assumed without justifying"
   ],
   "rubric_gaps": [
-    "rubric criteria that the submission does not clearly address"
+    "assignment expectations or details the submission does not clearly address"
   ],
   "defensible_sections": [
     "specific passages or claims that are worth probing in a defense"
@@ -30,7 +30,7 @@ Return ONLY valid JSON. No preamble, no markdown fences.
 --- PROFESSOR'S ASSIGNMENT BRIEF ---
 Title: {ASSIGNMENT_TITLE}
 Description: {ASSIGNMENT_DESCRIPTION}
-Rubric / Learning objectives: {RUBRIC}
+Additional details / expectations: {ADDITIONAL_DETAILS}
 Reference material summary (if any): {REFERENCE_SUMMARY}
 
 --- STUDENT'S SUBMISSION ---
@@ -42,17 +42,14 @@ QUESTION_PROMPT = """
 Generate exactly {N} oral defense questions for this student's submission.
 Difficulty level: {DIFFICULTY}
 
-STRICT RULES — every question must satisfy ALL of the following:
+STRICT RULES - every question must satisfy ALL of the following:
 1. It references something SPECIFIC in the student's submission (quote or paraphrase
    the exact section it targets in "section_reference")
-2. It is RELEVANT to the professor's rubric or learning objectives
-3. It is IMPOSSIBLE to answer well without having understood and written the work
-4. Generic topic questions are FORBIDDEN ("What is X?", "Explain Y" with no submission anchor)
-5. Each question must have a follow-up for when the student answers vaguely
-
-For difficulty "easy":   test whether they understand their own conclusions
-For difficulty "medium": probe their methodology and justify specific choices
-For difficulty "hard":   challenge assumptions, ask what-if variants, expose gaps
+2. It is relevant to the assignment description or additional details
+3. It is impossible to answer well without having understood and written the work
+4. Generic topic questions are forbidden
+5. Keep each question concise. Two sentences max.
+6. Each question must have a concise follow-up for vague answers
 
 Return ONLY valid JSON. No preamble, no markdown fences.
 
@@ -61,15 +58,15 @@ Return ONLY valid JSON. No preamble, no markdown fences.
     {{
       "text": "the question asked aloud to the student",
       "section_reference": "the specific part of their submission this targets",
-      "rubric_criterion": "which rubric point this tests",
-      "follow_up": "if their answer is vague or evasive, ask this"
+      "rubric_criterion": "which assignment expectation this tests",
+      "follow_up": "a short follow-up if their answer is vague or evasive"
     }}
   ]
 }}
 
 --- PROFESSOR'S CONTEXT ---
-Rubric: {RUBRIC}
-Learning objectives: {ASSIGNMENT_DESCRIPTION}
+Assignment description: {ASSIGNMENT_DESCRIPTION}
+Additional details: {ADDITIONAL_DETAILS}
 
 --- SUBMISSION ANALYSIS ---
 {ANALYSIS_JSON}
@@ -79,46 +76,44 @@ Learning objectives: {ASSIGNMENT_DESCRIPTION}
 EVAL_PROMPT = """
 Evaluate a student's oral defense performance and produce a comprehension report.
 
+The evaluation is only about whether the student understands the submission they turned in.
+The professor will evaluate the written document separately.
+
 You have:
-- The professor's rubric and assignment context
+- The assignment context
 - The student's original submission analysis
 - Every question asked, with the student's transcribed answer and voice signals
-- Voice signals per answer: hesitation count, filler word count, avg response
-  latency in ms, estimated confidence score (0–1)
 
 Assess whether the student genuinely understands the work they submitted.
-A student who authored their own work will: answer quickly, refer to specific
-details, self-correct naturally, and give consistent reasoning across questions.
-A student who did not will: hesitate on specifics, give textbook definitions
-instead of submission-specific answers, contradict themselves, and struggle with
-follow-ups.
+Questions and judgments should stay grounded in the student's own submission.
 
 Return ONLY valid JSON. No preamble, no markdown fences.
 
 {{
   "overall_score": <0-100>,
-  "understands": [
-    "topic or concept they clearly grasped, with brief evidence"
-  ],
-  "weak_in": [
-    "area where their knowledge was surface-level, with brief evidence"
-  ],
-  "cannot_justify": [
-    "specific claim from their submission they could not defend"
-  ],
-  "rubric_alignment": [
+  "ai_conclusion": "1-2 sentence conclusion about whether the student actually understands the submitted work",
+  "student_summary_markdown": "markdown summary for the student explaining the result",
+  "professor_summary_markdown": "markdown summary for the professor explaining where the defense did not align with the submission",
+  "behavioral_summary_markdown": "markdown summary of hesitation, vagueness, confidence, and follow-up behavior",
+  "qa_review": [
     {{
-      "criterion": "rubric criterion text",
-      "verdict": "demonstrated | partial | not demonstrated",
-      "evidence": "brief quote or paraphrase from their answer"
+      "question_text": "question asked",
+      "answer_text": "student answer",
+      "is_correct": true,
+      "why_marked_wrong_markdown": "if wrong or weak, explain exactly why; if acceptable, explain briefly why",
+      "submission_alignment_markdown": "explain how this answer did or did not align with the student's own submission",
+      "behavioral_signal_markdown": "mention hesitation, filler words, confidence, or follow-up behavior relevant to this answer"
     }}
   ],
-  "recommendation": "one of exactly: Clearly authored | Possibly AI-assisted but understands | AI-generated, does not understand",
-  "summary": "2 sentences of plain English for the professor"
+  "understanding_gaps": [
+    "specific concept or claim they could not explain"
+  ],
+  "recommendation": "one of exactly: Clearly understands submission | Partial understanding | Does not appear to understand submission"
 }}
 
---- PROFESSOR'S CONTEXT ---
-Rubric: {RUBRIC}
+--- ASSIGNMENT CONTEXT ---
+Description: {ASSIGNMENT_DESCRIPTION}
+Additional details: {ADDITIONAL_DETAILS}
 
 --- SUBMISSION ANALYSIS ---
 {ANALYSIS_JSON}

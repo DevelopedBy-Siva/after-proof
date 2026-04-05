@@ -61,6 +61,9 @@ export default function ProfDashboard() {
             <section key={assignment.id} className="rounded-3xl border border-neutral-800 bg-neutral-900 p-6">
               <h2 className="text-2xl font-semibold">{assignment.title}</h2>
               <p className="mt-2 max-w-3xl text-sm text-neutral-400">{assignment.description}</p>
+              {assignment.additionalDetails ? (
+                <p className="mt-2 max-w-3xl text-sm text-neutral-500">Additional details included</p>
+              ) : null}
               <p className="mt-3 text-xs uppercase tracking-[0.25em] text-neutral-500">
                 Difficulty {assignment.difficulty} • Due {new Date(assignment.deadline).toLocaleString()}
               </p>
@@ -90,7 +93,7 @@ export default function ProfDashboard() {
                         <td className="px-4 py-4 text-neutral-300">{student.overallScore ?? '—'}</td>
                         <td className="px-4 py-4">
                           {student.reportId ? (
-                            <Link to={`/score/${student.reportId}`} className="text-amber-400 transition hover:text-amber-300">
+                            <Link to={`/score/${student.reportId}?viewer=prof`} className="text-amber-400 transition hover:text-amber-300">
                               View report
                             </Link>
                           ) : (

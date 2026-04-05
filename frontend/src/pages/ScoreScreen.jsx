@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useParams } from 'react-router-dom'
+import MarkdownPreview from '../components/MarkdownPreview'
 import api from '../lib/api'
 
 const REC_COLORS = {
-  'Clearly authored': 'bg-emerald-950 text-emerald-300 border-emerald-800',
-  'Possibly AI-assisted but understands': 'bg-amber-950 text-amber-300 border-amber-800',
-  'AI-generated, does not understand': 'bg-red-950 text-red-300 border-red-800',
+  'Clearly understands submission': 'bg-emerald-950 text-emerald-300 border-emerald-800',
+  'Partial understanding': 'bg-amber-950 text-amber-300 border-amber-800',
+  'Does not appear to understand submission': 'bg-red-950 text-red-300 border-red-800',
 }
 
 export default function ScoreScreen() {
   const { reportId } = useParams()
+  const location = useLocation()
+  const viewer = new URLSearchParams(location.search).get('viewer') || 'student'
   const [report, setReport] = useState(null)
   const [displayScore, setDisplayScore] = useState(0)
 
@@ -39,79 +42,83 @@ export default function ScoreScreen() {
     return <div className="min-h-screen bg-neutral-950 text-neutral-400 flex items-center justify-center">Loading report...</div>
   }
 
+  const summaryMarkdown = viewer === 'prof' ? report.professorSummaryMarkdown : report.studentSummaryMarkdown
+
   return (
     <div className="min-h-screen bg-neutral-950 text-white">
-      <div className="mx-auto max-w-4xl px-6 py-12">
-        <p className="text-xs uppercase tracking-[0.35em] text-amber-400">Comprehension Report</p>
+      <div className="mx-auto max-w-5xl px-6 py-12">
+        <p className="text-xs uppercase tracking-[0.35em] text-amber-400">
+          {viewer === 'prof' ? 'Professor Report' : 'Student Report'}
+        </p>
         <h1 className="mt-3 text-3xl font-semibold">{report.studentName}</h1>
 
         <div className="mt-8 grid gap-6 lg:grid-cols-[18rem,1fr]">
           <div className="rounded-3xl border border-neutral-800 bg-neutral-900 p-8 text-center">
-            <p className="text-sm text-neutral-400">Overall score</p>
+            <p className="text-sm text-neutral-400">Final score</p>
             <p className="mt-4 text-7xl font-semibold tabular-nums">{displayScore}</p>
             <p className="text-neutral-500">/100</p>
           </div>
 
           <div className={`rounded-3xl border p-6 ${REC_COLORS[report.recommendation] || 'bg-neutral-900 border-neutral-800 text-white'}`}>
-            <p className="text-sm uppercase tracking-[0.25em]">Recommendation</p>
-            <p className="mt-3 text-2xl font-semibold">{report.recommendation}</p>
-            <p className="mt-3 text-sm text-neutral-200">{report.summary}</p>
+            <p className="text-sm uppercase tracking-[0.25em]">AI Conclusion</p>
+            <p className="mt-3 text-2xl font-semibold">{report.aiConclusion}</p>
+            <MarkdownPreview content={summaryMarkdown} className="mt-4 text-sm text-neutral-100" />
           </div>
         </div>
 
-        <div className="mt-8 grid gap-6 lg:grid-cols-3">
-          <ScoreColumn title="Understands" items={report.understands} tone="emerald" />
-          <ScoreColumn title="Weak In" items={report.weakIn} tone="amber" />
-          <ScoreColumn title="Cannot Justify" items={report.cannotJustify} tone="red" />
-        </div>
-
         <div className="mt-8 rounded-3xl border border-neutral-800 bg-neutral-900 p-6">
-          <h2 className="text-xl font-semibold">Rubric Alignment</h2>
-          <div className="mt-5 space-y-4">
-            {report.rubricAlignment?.map((item, index) => (
-              <div key={`${item.criterion}-${index}`} className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="font-medium">{item.criterion}</p>
-                  <span className="rounded-full bg-neutral-800 px-3 py-1 text-xs uppercase tracking-[0.2em] text-neutral-300">
-                    {item.verdict}
-                  </span>
-                </div>
-                <p className="mt-2 text-sm text-neutral-400">{item.evidence}</p>
+          <h2 className="text-xl font-semibold">Defense Review</h2>
+          <div className="mt-5 space-y-5">
+            {report.qaReview?.map((item, index) => (
+              <div key={`${item.question_text}-${index}`} className="rounded-2xl border border-neutral-800 bg-neutral-950 p-5">
+                <p className="text-xs uppercase tracking-[0.25em] text-neutral-500">Question {index + 1}</p>
+                <p className="mt-2 font-medium text-neutral-100">{item.question_text}</p>
+
+                <p className="mt-4 text-xs uppercase tracking-[0.25em] text-neutral-500">Student Answer</p>
+                <p className="mt-2 whitespace-pre-wrap text-sm text-neutral-300">{item.answer_text}</p>
+
+                <p className="mt-4 text-xs uppercase tracking-[0.25em] text-neutral-500">
+                  {viewer === 'prof' ? 'Why it does not align with the submission' : 'Why this was marked this way'}
+                </p>
+                <MarkdownPreview
+                  content={viewer === 'prof' ? item.submission_alignment_markdown : item.why_marked_wrong_markdown}
+                  className="mt-2 text-sm text-neutral-200"
+                />
+
+                <p className="mt-4 text-xs uppercase tracking-[0.25em] text-neutral-500">Behavioral Signals</p>
+                <MarkdownPreview content={item.behavioral_signal_markdown} className="mt-2 text-sm text-neutral-300" />
               </div>
             ))}
           </div>
         </div>
 
+        <div className="mt-8 rounded-3xl border border-neutral-800 bg-neutral-900 p-6">
+          <h2 className="text-xl font-semibold">Understanding Gaps</h2>
+          <div className="mt-4 space-y-3">
+            {(report.understandingGaps || []).map((gap, index) => (
+              <p key={`${gap}-${index}`} className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4 text-sm text-neutral-200">
+                {gap}
+              </p>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-8 rounded-3xl border border-neutral-800 bg-neutral-900 p-6">
+          <h2 className="text-xl font-semibold">Behavior Summary</h2>
+          <MarkdownPreview content={report.behavioralSummaryMarkdown} className="mt-4 text-sm text-neutral-200" />
+        </div>
+
         <div className="mt-8 flex gap-4">
-          <Link to={`/tutor/${reportId}`} className="rounded-2xl bg-amber-400 px-5 py-3 font-medium text-neutral-950 transition hover:bg-amber-300">
-            Talk to AI tutor
-          </Link>
+          {viewer !== 'prof' ? (
+            <Link to={`/tutor/${reportId}`} className="rounded-2xl bg-amber-400 px-5 py-3 font-medium text-neutral-950 transition hover:bg-amber-300">
+              Ask Tutor
+            </Link>
+          ) : null}
           <Link to="/dashboard" className="rounded-2xl border border-neutral-700 px-5 py-3 text-neutral-300 transition hover:border-neutral-500 hover:text-white">
             Back to dashboard
           </Link>
         </div>
       </div>
     </div>
-  )
-}
-
-function ScoreColumn({ title, items = [], tone }) {
-  const tones = {
-    emerald: 'border-emerald-900 bg-emerald-950/20 text-emerald-200',
-    amber: 'border-amber-900 bg-amber-950/20 text-amber-200',
-    red: 'border-red-900 bg-red-950/20 text-red-200',
-  }
-
-  return (
-    <section className={`rounded-3xl border p-6 ${tones[tone]}`}>
-      <h2 className="text-lg font-semibold">{title}</h2>
-      <div className="mt-4 space-y-3">
-        {items.length ? items.map((item, index) => (
-          <p key={`${title}-${index}`} className="rounded-2xl border border-current/10 bg-black/10 p-3 text-sm">
-            {item}
-          </p>
-        )) : <p className="text-sm opacity-70">No items recorded.</p>}
-      </div>
-    </section>
   )
 }

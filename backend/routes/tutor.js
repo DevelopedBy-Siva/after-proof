@@ -33,8 +33,8 @@ Keep answers concise, spoken-word natural, and specific to the student's actual 
 ASSIGNMENT:
 ${assignmentDoc.data()?.description || ''}
 
-RUBRIC:
-${assignmentDoc.data()?.rubric || ''}
+ADDITIONAL DETAILS:
+${assignmentDoc.data()?.additionalDetails || ''}
 
 COMPREHENSION REPORT:
 ${JSON.stringify(report, null, 2)}
@@ -43,7 +43,16 @@ DEFENSE Q&A:
 ${JSON.stringify(sessionDoc.data()?.transcript || [], null, 2)}
 
 SUBMISSION ANALYSIS:
-${JSON.stringify(submissionDoc.data()?.analysis || {}, null, 2)}`;
+${JSON.stringify(submissionDoc.data()?.analysis || {}, null, 2)}
+
+ADAPTIVE QUESTIONING CONTEXT:
+${JSON.stringify((sessionDoc.data()?.transcript || []).map((entry) => ({
+  questionText: entry.questionText,
+  followUpAsked: entry.followUpAsked,
+  voiceSignals: entry.voiceSignals,
+})), null, 2)}
+
+Explain clearly whether the student sounded like they understood their own submission or were relying on AI without understanding. Use markdown.`;
 
     const contents = [
       { role: 'user', parts: [{ text: prompt }] },

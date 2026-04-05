@@ -36,14 +36,14 @@ class PipelineOrchestrator:
                 submission_text=submission_text,
                 assignment_title=assignment['title'],
                 assignment_description=assignment['description'],
-                rubric=assignment['rubric'],
+                additional_details=assignment.get('additionalDetails', ''),
                 reference_summary='\n'.join(assignment.get('referenceDocsGcs', [])),
             )
 
             question_set = run_designer(
                 analyst_output=analysis,
-                rubric=assignment['rubric'],
                 assignment_description=assignment['description'],
+                additional_details=assignment.get('additionalDetails', ''),
                 difficulty=assignment['difficulty'],
             )
 
@@ -91,7 +91,8 @@ class PipelineOrchestrator:
         report = run_evaluator(
             transcript_json=json.dumps(session.get('transcript', []), indent=2),
             analyst_output=submission['analysis'],
-            rubric=assignment['rubric'],
+            assignment_description=assignment['description'],
+            additional_details=assignment.get('additionalDetails', ''),
         )
 
         report_id = str(uuid.uuid4())
@@ -101,12 +102,13 @@ class PipelineOrchestrator:
             'assignmentId': submission['assignmentId'],
             'studentName': submission['studentName'],
             'overallScore': report['overall_score'],
-            'understands': report['understands'],
-            'weakIn': report['weak_in'],
-            'cannotJustify': report['cannot_justify'],
-            'rubricAlignment': report['rubric_alignment'],
+            'aiConclusion': report['ai_conclusion'],
+            'studentSummaryMarkdown': report['student_summary_markdown'],
+            'professorSummaryMarkdown': report['professor_summary_markdown'],
+            'behavioralSummaryMarkdown': report['behavioral_summary_markdown'],
+            'qaReview': report['qa_review'],
+            'understandingGaps': report['understanding_gaps'],
             'recommendation': report['recommendation'],
-            'summary': report['summary'],
             'generatedAt': firestore.SERVER_TIMESTAMP,
         }
 

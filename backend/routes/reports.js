@@ -10,7 +10,19 @@ router.get('/:reportId', async (req, res) => {
       return res.status(404).json({ error: 'Report not found' });
     }
 
-    res.json(doc.data());
+    const report = doc.data();
+    const sessionDoc = await db.collection('defense_sessions').doc(report.sessionId).get();
+    const submissionDoc = await db.collection('submissions').doc(report.submissionId).get();
+    const assignmentDoc = await db.collection('assignments').doc(report.assignmentId).get();
+
+    res.json({
+      ...report,
+      transcript: sessionDoc.exists ? sessionDoc.data().transcript || [] : [],
+      assignmentTitle: assignmentDoc.exists ? assignmentDoc.data().title : '',
+      assignmentDescription: assignmentDoc.exists ? assignmentDoc.data().description : '',
+      additionalDetails: assignmentDoc.exists ? assignmentDoc.data().additionalDetails || '' : '',
+      analysis: submissionDoc.exists ? submissionDoc.data().analysis || {} : {},
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: error.message });

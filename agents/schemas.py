@@ -24,21 +24,25 @@ class QuestionSet(BaseModel):
     questions: List[Question]
 
 
-class RubricVerdict(BaseModel):
-    criterion: str
-    verdict: Literal['demonstrated', 'partial', 'not demonstrated']
-    evidence: str
+class QAReview(BaseModel):
+    question_text: str
+    answer_text: str
+    is_correct: bool
+    why_marked_wrong_markdown: str
+    submission_alignment_markdown: str
+    behavioral_signal_markdown: str
 
 
 class EvalReport(BaseModel):
     overall_score: int
-    understands: List[str]
-    weak_in: List[str]
-    cannot_justify: List[str]
-    rubric_alignment: List[RubricVerdict]
+    ai_conclusion: str
+    student_summary_markdown: str
+    professor_summary_markdown: str
+    behavioral_summary_markdown: str
+    qa_review: List[QAReview]
+    understanding_gaps: List[str]
     recommendation: Literal[
-        'Clearly authored',
-        'Possibly AI-assisted but understands',
-        'AI-generated, does not understand',
+        'Clearly understands submission',
+        'Partial understanding',
+        'Does not appear to understand submission',
     ]
-    summary: str

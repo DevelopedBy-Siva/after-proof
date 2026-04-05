@@ -48,7 +48,7 @@ router.get('/:token', async (req, res) => {
     res.json({
       assignmentTitle: match.data.title,
       description: match.data.description,
-      rubric: match.data.rubric,
+      additionalDetails: match.data.additionalDetails || '',
       deadline: match.data.deadline,
       studentName: match.student.name,
       difficulty: match.data.difficulty,

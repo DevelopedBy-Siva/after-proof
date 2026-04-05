@@ -5,10 +5,16 @@ from agents.schemas import EvalReport
 from agents.utils import get_model
 
 
-def run_evaluator(transcript_json: str, analyst_output: dict, rubric: str) -> dict:
+def run_evaluator(
+    transcript_json: str,
+    analyst_output: dict,
+    assignment_description: str,
+    additional_details: str,
+) -> dict:
     model = get_model()
     prompt = EVAL_PROMPT.format(
-        RUBRIC=rubric,
+        ASSIGNMENT_DESCRIPTION=assignment_description,
+        ADDITIONAL_DETAILS=additional_details or 'None provided',
         ANALYSIS_JSON=json.dumps(analyst_output, indent=2),
         QA_JSON=transcript_json,
     )

@@ -54,7 +54,7 @@ async function buildAssignmentView(doc) {
     id: doc.id,
     title: assignment.title,
     description: assignment.description,
-    rubric: assignment.rubric,
+    additionalDetails: assignment.additionalDetails || '',
     difficulty: assignment.difficulty,
     deadline: assignment.deadline,
     createdAt: assignment.createdAt,
@@ -68,14 +68,14 @@ router.post('/', async (req, res) => {
     const {
       title,
       description,
-      rubric,
+      additionalDetails,
       difficulty,
       deadline,
       referenceDocUrls = [],
     } = req.body;
 
-    if (!title || !description || !rubric || !difficulty || !deadline) {
-      return res.status(400).json({ error: 'title, description, rubric, difficulty, and deadline are required' });
+    if (!title || !description || !difficulty || !deadline) {
+      return res.status(400).json({ error: 'title, description, difficulty, and deadline are required' });
     }
 
     const assignmentId = uuidv4();
@@ -93,7 +93,7 @@ router.post('/', async (req, res) => {
     await db.collection('assignments').doc(assignmentId).set({
       title,
       description,
-      rubric,
+      additionalDetails: additionalDetails || '',
       difficulty,
       deadline,
       createdAt: FieldValue.serverTimestamp(),
@@ -105,7 +105,7 @@ router.post('/', async (req, res) => {
       token,
       name: student.name,
       email: student.email,
-      submitUrl: `${process.env.BASE_URL || 'http://localhost:5173'}/submit/${token}`,
+      submitUrl: `${process.env.FRONTEND_BASE_URL || 'http://localhost:5173'}/submit/${token}`,
     }));
 
     console.log(`[assignments] created assignment ${assignmentId}`);

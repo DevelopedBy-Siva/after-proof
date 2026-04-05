@@ -9,14 +9,14 @@ def run_analyst(
     submission_text: str,
     assignment_title: str,
     assignment_description: str,
-    rubric: str,
+    additional_details: str,
     reference_summary: str = '',
 ) -> dict:
     model = get_model()
     prompt = ANALYST_PROMPT.format(
         ASSIGNMENT_TITLE=assignment_title,
         ASSIGNMENT_DESCRIPTION=assignment_description,
-        RUBRIC=rubric,
+        ADDITIONAL_DETAILS=additional_details or 'None provided',
         REFERENCE_SUMMARY=reference_summary or 'None provided',
         SUBMISSION_TEXT=submission_text,
     )

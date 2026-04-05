@@ -19,6 +19,7 @@ module.exports = function registerDefenseNamespace(io) {
         const submission = submissionDoc.data();
         const questions = submission.questions || [];
         const transcript = session.transcript || [];
+        const maxAsks = 4;
 
         if (session.status === 'complete' || submission.status === 'evaluating' || submission.status === 'complete') {
           socket.emit('session_complete', { reportId: submission.reportId || null });
@@ -45,9 +46,10 @@ module.exports = function registerDefenseNamespace(io) {
         socket.emit('session_ready', {
           questions,
           totalCount: questions.length,
+          maxAsks,
         });
 
-        if (socket.data.currentIndex >= questions.length) {
+        if (transcript.length >= maxAsks || socket.data.currentIndex >= questions.length) {
           socket.emit('session_complete', { reportId: submission.reportId || null });
           return;
         }
@@ -95,6 +97,7 @@ module.exports = function registerDefenseNamespace(io) {
 
         const answerText = transcript || '';
         const vague = answerText.trim().split(/\s+/).filter(Boolean).length < 18;
+        const askedCount = (session.transcript || []).length + 1;
 
         await db.collection('defense_sessions').doc(sessionId).update({
           transcript: FieldValue.arrayUnion({
@@ -110,6 +113,12 @@ module.exports = function registerDefenseNamespace(io) {
             },
           }),
         });
+
+        if (askedCount >= maxAsks) {
+          socket.data.completed = true;
+          socket.emit('session_complete', { reportId: submission.reportId || null });
+          return;
+        }
 
         if (vague && !awaitingFollowUp && question.follow_up) {
           socket.data.awaitingFollowUp = true;

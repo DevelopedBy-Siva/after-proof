@@ -14,6 +14,7 @@ export default function DefenseSession() {
   const recognitionRef = useRef(null)
   const transcriptRef = useRef('')
   const finishingRef = useRef(false)
+  const submitAnswerRef = useRef(() => {})
   const [session, setSession] = useState(null)
   const [question, setQuestion] = useState('')
   const [questionIndex, setQuestionIndex] = useState(1)
@@ -21,8 +22,17 @@ export default function DefenseSession() {
   const [mode, setMode] = useState('loading')
   const [liveTranscript, setLiveTranscript] = useState('')
   const [feed, setFeed] = useState([])
-  const [timeLeft, setTimeLeft] = useState(600)
+  const [timeLeft, setTimeLeft] = useState(30)
   const [timerRunning, setTimerRunning] = useState(false)
+
+  useEffect(() => {
+    api.get(`/api/session/${sessionId}`)
+      .then((response) => {
+        setSession(response.data)
+        setQuestionTotal(response.data.questions.length)
+      })
+      .catch(() => setMode('error'))
+  }, [sessionId])
 
   useEffect(() => {
     const timerId = window.setInterval(() => {
@@ -33,13 +43,24 @@ export default function DefenseSession() {
   }, [timerRunning])
 
   useEffect(() => {
-    api.get(`/api/session/${sessionId}`)
-      .then((response) => {
-        setSession(response.data)
-        setQuestionTotal(response.data.questions.length)
-      })
-      .catch(() => setMode('error'))
-  }, [sessionId])
+    if (timeLeft === 0 && mode === 'listening' && !finishingRef.current) {
+      submitAnswerRef.current()
+    }
+  }, [timeLeft, mode])
+
+  useEffect(() => {
+    const block = (event) => event.preventDefault()
+    document.addEventListener('copy', block)
+    document.addEventListener('cut', block)
+    document.addEventListener('paste', block)
+    document.addEventListener('contextmenu', block)
+    return () => {
+      document.removeEventListener('copy', block)
+      document.removeEventListener('cut', block)
+      document.removeEventListener('paste', block)
+      document.removeEventListener('contextmenu', block)
+    }
+  }, [])
 
   useEffect(() => {
     const socket = createDefenseSocket()
@@ -61,9 +82,10 @@ export default function DefenseSession() {
       setQuestionTotal(total)
       setLiveTranscript('')
       transcriptRef.current = ''
+      setTimeLeft(30)
       setMode('speaking')
-      setTimerRunning(true)
       await speak(text)
+      setTimerRunning(true)
       startListening(Recognition, socket)
     })
 
@@ -71,8 +93,10 @@ export default function DefenseSession() {
       setQuestion(text)
       setLiveTranscript('')
       transcriptRef.current = ''
+      setTimeLeft(30)
       setMode('speaking')
       await speak(text)
+      setTimerRunning(true)
       startListening(Recognition, socket)
     })
 
@@ -87,7 +111,7 @@ export default function DefenseSession() {
       stopListening()
       socket.disconnect()
       const response = await api.post(`/api/session/${sessionId}/end`, { recordingGcsUrl: null })
-      navigate(`/score/${reportId || response.data.reportId}`)
+      navigate(`/score/${reportId || response.data.reportId}?viewer=student`)
     })
 
     return () => {
@@ -158,11 +182,14 @@ export default function DefenseSession() {
     }
 
     stopListening()
+    setTimerRunning(false)
     const answer = transcriptRef.current || '(no answer)'
     setFeed((current) => [...current, { question, answer }])
     socketRef.current?.emit('answer_done', { sessionId, transcript: answer })
     setMode('waiting')
   }
+
+  submitAnswerRef.current = submitAnswer
 
   function formatTime(totalSeconds) {
     const minutes = Math.floor(totalSeconds / 60)
@@ -175,7 +202,13 @@ export default function DefenseSession() {
   }
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(160deg,_#030712,_#0f172a_45%,_#111827)] text-white">
+    <div
+      className="min-h-screen bg-[linear-gradient(160deg,_#030712,_#0f172a_45%,_#111827)] text-white"
+      onCopy={(event) => event.preventDefault()}
+      onPaste={(event) => event.preventDefault()}
+      onCut={(event) => event.preventDefault()}
+      onContextMenu={(event) => event.preventDefault()}
+    >
       <div className="mx-auto flex min-h-screen max-w-7xl flex-col px-6 py-8 lg:flex-row lg:gap-8">
         <div className="flex-1 rounded-[2rem] border border-slate-800 bg-slate-950/60 p-8 shadow-2xl">
           <div className="flex flex-wrap items-center justify-between gap-4">
@@ -209,7 +242,7 @@ export default function DefenseSession() {
               {mode === 'loading' && 'Loading your live defense session...'}
               {mode === 'priming' && 'Preparing the first question...'}
               {mode === 'speaking' && 'Question playing...'}
-              {mode === 'listening' && 'Speak your answer and press done when finished.'}
+              {mode === 'listening' && 'Speak your answer. This question closes automatically in 30 seconds.'}
               {mode === 'waiting' && 'Processing your answer...'}
               {mode === 'complete' && 'Defense complete. Generating your report...'}
             </p>
