@@ -18,6 +18,35 @@ oauth2Client.setCredentials({
 
 const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
+function normalizeCustomStudents(customStudents = []) {
+  return customStudents
+    .filter((student) => student && typeof student === 'object')
+    .map((student) => ({
+      name: String(student.name || '').trim(),
+      email: String(student.email || '').trim().toLowerCase(),
+    }))
+    .filter((student) => student.name && student.email);
+}
+
+function mergeStudents(defaultStudents, customStudents) {
+  const seenEmails = new Set();
+  const merged = [];
+
+  for (const student of [...defaultStudents, ...customStudents]) {
+    const email = String(student.email || '').trim().toLowerCase();
+    const name = String(student.name || '').trim();
+
+    if (!name || !email || seenEmails.has(email)) {
+      continue;
+    }
+
+    seenEmails.add(email);
+    merged.push({ name, email });
+  }
+
+  return merged;
+}
+
 async function buildAssignmentView(doc) {
   const assignment = doc.data();
   const students = await Promise.all(
@@ -72,6 +101,7 @@ router.post('/', async (req, res) => {
       difficulty,
       deadline,
       referenceDocUrls = [],
+      customStudents = [],
     } = req.body;
 
     if (!title || !description || !difficulty || !deadline) {
@@ -79,8 +109,9 @@ router.post('/', async (req, res) => {
     }
 
     const assignmentId = uuidv4();
+    const mergedStudents = mergeStudents(STUDENTS, normalizeCustomStudents(customStudents));
     const studentTokens = Object.fromEntries(
-      STUDENTS.map((student) => [
+      mergedStudents.map((student) => [
         uuidv4(),
         {
           name: student.name,
