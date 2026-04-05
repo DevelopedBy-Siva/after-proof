@@ -108,6 +108,11 @@ router.post('/', async (req, res) => {
       submitUrl: `${process.env.BASE_URL || 'http://localhost:5173'}/submit/${token}`,
     }));
 
+    console.log(`[assignments] created assignment ${assignmentId}`);
+    for (const invitee of tokens) {
+      console.log(`[assignments] ${invitee.name} <${invitee.email}> -> ${invitee.submitUrl}`);
+    }
+
     for (const invitee of tokens) {
       try {
         await calendar.events.insert({
