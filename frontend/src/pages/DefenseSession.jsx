@@ -19,6 +19,8 @@ export default function DefenseSession() {
   const [question, setQuestion] = useState('')
   const [questionIndex, setQuestionIndex] = useState(1)
   const [questionTotal, setQuestionTotal] = useState(0)
+  const [askNumber, setAskNumber] = useState(1)
+  const [askTotal, setAskTotal] = useState(4)
   const [mode, setMode] = useState('loading')
   const [liveTranscript, setLiveTranscript] = useState('')
   const [feed, setFeed] = useState([])
@@ -71,15 +73,18 @@ export default function DefenseSession() {
       socket.emit('join_session', { sessionId })
     })
 
-    socket.on('session_ready', ({ totalCount }) => {
+    socket.on('session_ready', ({ totalCount, maxAsks }) => {
       setQuestionTotal(totalCount)
+      setAskTotal(maxAsks || totalCount || 4)
       setMode('priming')
     })
 
-    socket.on('ask_question', async ({ text, index, total }) => {
+    socket.on('ask_question', async ({ text, index, total, askNumber: nextAskNumber, askTotal: nextAskTotal }) => {
       setQuestion(text)
       setQuestionIndex(index)
       setQuestionTotal(total)
+      setAskNumber(nextAskNumber || index)
+      setAskTotal(nextAskTotal || total)
       setLiveTranscript('')
       transcriptRef.current = ''
       setTimeLeft(30)
@@ -89,8 +94,10 @@ export default function DefenseSession() {
       startListening(Recognition, socket)
     })
 
-    socket.on('ask_followup', async ({ text }) => {
+    socket.on('ask_followup', async ({ text, askNumber: nextAskNumber, askTotal: nextAskTotal }) => {
       setQuestion(text)
+      setAskNumber(nextAskNumber || askNumber)
+      setAskTotal(nextAskTotal || askTotal)
       setLiveTranscript('')
       transcriptRef.current = ''
       setTimeLeft(30)
@@ -223,7 +230,7 @@ export default function DefenseSession() {
 
           <div className="mt-10">
             <p className="text-sm uppercase tracking-[0.3em] text-slate-500">
-              Question {questionIndex} of {questionTotal || 0}
+              Prompt {askNumber} of {askTotal}
             </p>
             <h2 className="mt-4 max-w-3xl text-4xl font-semibold leading-tight">{question || 'Waiting for the first question...'}</h2>
           </div>

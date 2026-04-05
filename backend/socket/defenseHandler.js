@@ -60,6 +60,8 @@ module.exports = function registerDefenseNamespace(io) {
             text: first.text,
             index: socket.data.currentIndex + 1,
             total: questions.length,
+            askNumber: transcript.length + 1,
+            askTotal: MAX_ASKS,
           });
         }
       } catch (error) {
@@ -122,7 +124,11 @@ module.exports = function registerDefenseNamespace(io) {
 
         if (vague && !awaitingFollowUp && question.follow_up) {
           socket.data.awaitingFollowUp = true;
-          socket.emit('ask_followup', { text: question.follow_up });
+          socket.emit('ask_followup', {
+            text: question.follow_up,
+            askNumber: askedCount + 1,
+            askTotal: MAX_ASKS,
+          });
           return;
         }
 
@@ -140,6 +146,8 @@ module.exports = function registerDefenseNamespace(io) {
           text: nextQuestion.text,
           index: socket.data.currentIndex + 1,
           total: questions.length,
+          askNumber: askedCount + 1,
+          askTotal: MAX_ASKS,
         });
       } catch (error) {
         console.error(error);

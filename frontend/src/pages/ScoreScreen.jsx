@@ -14,28 +14,16 @@ export default function ScoreScreen() {
   const location = useLocation()
   const viewer = new URLSearchParams(location.search).get('viewer') || 'student'
   const [report, setReport] = useState(null)
-  const [displayScore, setDisplayScore] = useState(0)
+  const [displayScore, setDisplayScore] = useState(null)
 
   useEffect(() => {
     api.get(`/api/report/${reportId}`).then((response) => setReport(response.data))
   }, [reportId])
 
   useEffect(() => {
-    if (!report) {
-      return undefined
+    if (report) {
+      setDisplayScore(report.overallScore)
     }
-
-    let frame = 0
-    const target = report.overallScore
-    const timer = window.setInterval(() => {
-      frame += 1
-      setDisplayScore(Math.min(target, Math.round((target * frame) / 45)))
-      if (frame >= 45) {
-        window.clearInterval(timer)
-      }
-    }, 33)
-
-    return () => window.clearInterval(timer)
   }, [report])
 
   if (!report) {
@@ -55,7 +43,7 @@ export default function ScoreScreen() {
         <div className="mt-8 grid gap-6 lg:grid-cols-[18rem,1fr]">
           <div className="rounded-3xl border border-neutral-800 bg-neutral-900 p-8 text-center">
             <p className="text-sm text-neutral-400">Final score</p>
-            <p className="mt-4 text-7xl font-semibold tabular-nums">{displayScore}</p>
+            <p className="mt-4 text-7xl font-semibold tabular-nums">{displayScore ?? report.overallScore}</p>
             <p className="text-neutral-500">/100</p>
           </div>
 
