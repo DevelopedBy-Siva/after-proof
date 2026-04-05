@@ -18,6 +18,21 @@ oauth2Client.setCredentials({
 
 const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
+function getFrontendBaseUrl() {
+  const configuredUrl = String(process.env.FRONTEND_URL || '').trim().replace(/\/+$/, '');
+
+  if (configuredUrl) {
+    return configuredUrl;
+  }
+
+  if (process.env.NODE_ENV === 'production' || process.env.K_SERVICE) {
+    console.warn('[assignments] FRONTEND_URL is missing; falling back to https://defendly.web.app');
+    return 'https://defendly.web.app';
+  }
+
+  return 'http://localhost:5173';
+}
+
 function normalizeCustomStudents(customStudents = []) {
   return customStudents
     .filter((student) => student && typeof student === 'object')
@@ -132,11 +147,12 @@ router.post('/', async (req, res) => {
       studentTokens,
     });
 
+    const frontendBaseUrl = getFrontendBaseUrl();
     const tokens = Object.entries(studentTokens).map(([token, student]) => ({
       token,
       name: student.name,
       email: student.email,
-      submitUrl: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/submit/${token}`,
+      submitUrl: `${frontendBaseUrl}/submit/${token}`,
     }));
 
     console.log(`[assignments] created assignment ${assignmentId}`);
