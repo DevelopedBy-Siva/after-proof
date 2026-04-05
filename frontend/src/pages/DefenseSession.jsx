@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { FileCheck, Loader2, Bot, Mic, Clock3 } from 'lucide-react'
 import api from '../lib/api'
 import { createDefenseSocket } from '../lib/socket'
 
@@ -125,7 +126,7 @@ export default function DefenseSession() {
       stopListening()
       socket.disconnect()
     }
-  }, [sessionId, navigate])
+  }, [sessionId, navigate, askNumber, askTotal])
 
   async function speak(text) {
     if ('speechSynthesis' in window) {
@@ -204,87 +205,137 @@ export default function DefenseSession() {
     return `${minutes}:${String(seconds).padStart(2, '0')}`
   }
 
+  function getStatusText() {
+    if (mode === 'loading') return 'Loading your defense session'
+    if (mode === 'priming') return 'Preparing the first question'
+    if (mode === 'speaking') return 'Playing the question'
+    if (mode === 'listening') return 'Speak your answer. This question closes automatically in 30 seconds.'
+    if (mode === 'waiting') return 'Processing your answer'
+    if (mode === 'complete') return 'Defense complete. Generating your report'
+    return ''
+  }
+
   if (mode === 'error') {
-    return <div className="min-h-screen bg-neutral-950 text-red-400 flex items-center justify-center">Unable to load defense session</div>
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-white text-sm text-red-500">
+        Unable to load defense session
+      </div>
+    )
   }
 
   return (
     <div
-      className="min-h-screen bg-[linear-gradient(160deg,_#030712,_#0f172a_45%,_#111827)] text-white"
+      className="min-h-screen bg-white text-neutral-900"
       onCopy={(event) => event.preventDefault()}
       onPaste={(event) => event.preventDefault()}
       onCut={(event) => event.preventDefault()}
       onContextMenu={(event) => event.preventDefault()}
     >
-      <div className="mx-auto flex min-h-screen max-w-7xl flex-col px-6 py-8 lg:flex-row lg:gap-8">
-        <div className="flex-1 rounded-[2rem] border border-slate-800 bg-slate-950/60 p-8 shadow-2xl">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.35em] text-sky-300">Live Defense</p>
-              <h1 className="mt-2 text-3xl font-semibold">{session?.assignmentTitle || 'Defense session'}</h1>
+      <header className="bg-white">
+        <div className="mx-auto flex max-w-6xl items-center px-8 py-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50">
+              <FileCheck className="h-5 w-5 text-blue-600" />
             </div>
-            <div className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-300">
+
+            <p className="text-[1.65rem] font-medium tracking-tight text-blue-600">
+              AfterProof
+            </p>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto flex max-w-7xl flex-col gap-8 px-8 pb-10 pt-4 lg:flex-row">
+        <section className="flex-1 rounded-3xl border border-neutral-200 bg-white p-8">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-blue-600">Live Defense</p>
+              <h1 className="mt-2 text-3xl font-medium tracking-tight text-neutral-900">
+                {session?.assignmentTitle || 'Defense session'}
+              </h1>
+            </div>
+
+            <div className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-600">
+              <Clock3 className="h-4 w-4" />
               {formatTime(timeLeft)}
             </div>
           </div>
 
           <div className="mt-10">
-            <p className="text-sm uppercase tracking-[0.3em] text-slate-500">
+            <p className="text-xs uppercase tracking-wide text-neutral-500">
               Prompt {askNumber} of {askTotal}
             </p>
-            <h2 className="mt-4 max-w-3xl text-4xl font-semibold leading-tight">{question || 'Waiting for the first question...'}</h2>
+
+            <h2 className="mt-4 max-w-4xl text-3xl font-medium leading-tight text-neutral-900">
+              {question || 'Waiting for the first question...'}
+            </h2>
           </div>
 
-          <div className="mt-12 rounded-[2rem] border border-slate-800 bg-slate-900/70 p-8">
-            <div className="flex items-end justify-center gap-2">
-              {[0, 1, 2, 3, 4].map((bar) => (
-                <div
-                  key={bar}
-                  className={`w-4 rounded-full bg-sky-400 transition-all ${mode === 'listening' ? 'animate-pulse' : ''}`}
-                  style={{ height: `${36 + (bar % 3) * 24}px` }}
-                />
-              ))}
+          <div className="mt-10 rounded-3xl border border-neutral-200 bg-neutral-50 p-8">
+            <div className="flex items-center justify-center">
+              {mode === 'listening' ? (
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+                  <Mic className="h-6 w-6" />
+                </div>
+              ) : (
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                </div>
+              )}
             </div>
-            <p className="mt-6 text-center text-sm text-slate-400">
-              {mode === 'loading' && 'Loading your live defense session...'}
-              {mode === 'priming' && 'Preparing the first question...'}
-              {mode === 'speaking' && 'Question playing...'}
-              {mode === 'listening' && 'Speak your answer. This question closes automatically in 30 seconds.'}
-              {mode === 'waiting' && 'Processing your answer...'}
-              {mode === 'complete' && 'Defense complete. Generating your report...'}
+
+            <p className="mx-auto mt-5 max-w-2xl text-center text-sm leading-6 text-neutral-600">
+              {getStatusText()}
             </p>
 
             {mode === 'listening' ? (
               <button
                 onClick={submitAnswer}
-                className="mx-auto mt-6 block rounded-2xl bg-sky-400 px-5 py-3 font-medium text-slate-950 transition hover:bg-sky-300"
+                className="mx-auto mt-6 block rounded-full bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-blue-700"
               >
                 Done answering
               </button>
             ) : null}
           </div>
-        </div>
+        </section>
 
-        <aside className="mt-8 w-full rounded-[2rem] border border-slate-800 bg-slate-950/60 p-6 lg:mt-0 lg:w-[24rem]">
-          <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Transcript Feed</p>
+        <aside className="w-full rounded-3xl border border-neutral-200 bg-white p-6 lg:w-[24rem]">
+          <div className="flex items-center gap-2">
+            <Bot className="h-4 w-4 text-blue-600" />
+            <p className="text-sm font-medium text-neutral-900">Transcript Feed</p>
+          </div>
+
           <div className="mt-6 space-y-5">
             {liveTranscript ? (
-              <div className="rounded-2xl border border-sky-900 bg-sky-950/30 p-4">
-                <p className="text-xs uppercase tracking-[0.25em] text-sky-300">Live</p>
-                <p className="mt-2 text-sm text-slate-200">{liveTranscript}</p>
+              <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
+                <p className="text-xs uppercase tracking-wide text-neutral-500">Live</p>
+                <p className="mt-2 text-sm leading-6 text-neutral-700">{liveTranscript}</p>
               </div>
             ) : null}
+
             {feed.map((entry, index) => (
-              <div key={`${entry.question}-${index}`} className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-                <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Question</p>
-                <p className="mt-2 text-sm text-slate-200">{entry.question}</p>
-                <p className="mt-4 text-xs uppercase tracking-[0.25em] text-slate-500">Answer</p>
-                <p className="mt-2 text-sm text-slate-300">{entry.answer}</p>
+              <div
+                key={`${entry.question}-${index}`}
+                className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4"
+              >
+                <p className="text-xs uppercase tracking-wide text-neutral-500">
+                  Question
+                </p>
+                <p className="mt-2 text-sm leading-6 text-neutral-800">
+                  {entry.question}
+                </p>
+
+                <p className="mt-4 text-xs uppercase tracking-wide text-neutral-500">
+                  Answer
+                </p>
+                <p className="mt-2 text-sm leading-6 text-neutral-700">
+                  {entry.answer}
+                </p>
               </div>
             ))}
           </div>
         </aside>
-      </div>
+      </main>
     </div>
   )
 }

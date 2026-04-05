@@ -45,7 +45,7 @@ async function buildAssignmentView(doc) {
         submissionId: submission?.id || null,
         sessionId: submission?.sessionId || null,
         reportId: submission?.reportId || null,
-        overallScore: report?.overallScore ?? null,
+        understanding: report?.understanding ?? null,
       };
     })
   );

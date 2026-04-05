@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { FileCheck, Loader2, Upload, ArrowUpFromLine } from 'lucide-react'
 import MarkdownPreview from '../components/MarkdownPreview'
 import api from '../lib/api'
 
@@ -12,7 +13,8 @@ export default function StudentLanding() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    api.get(`/api/submit/${token}`)
+    api
+      .get(`/api/submit/${token}`)
       .then((response) => setDetails(response.data))
       .catch(() => setError('Invalid or expired submission link'))
   }, [token])
@@ -38,9 +40,7 @@ export default function StudentLanding() {
 
   async function handleUpload(event) {
     event.preventDefault()
-    if (!file) {
-      return
-    }
+    if (!file) return
 
     setUploading(true)
     setError('')
@@ -65,11 +65,20 @@ export default function StudentLanding() {
   }
 
   if (error && !details) {
-    return <div className="min-h-screen bg-neutral-950 text-red-400 flex items-center justify-center px-6">{error}</div>
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-white px-6 text-red-500">
+        {error}
+      </div>
+    )
   }
 
   if (!details) {
-    return <div className="min-h-screen bg-neutral-950 text-neutral-400 flex items-center justify-center px-6">Loading assignment...</div>
+    return (
+      <div className="flex min-h-screen items-center justify-center gap-3 bg-white px-6 text-neutral-500">
+        <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+        <span>Loading activity...</span>
+      </div>
+    )
   }
 
   const analyzingSteps = [
@@ -80,65 +89,125 @@ export default function StudentLanding() {
   ]
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.18),_transparent_35%),linear-gradient(180deg,_#0a0a0a,_#171717)] text-white">
-      <div className="mx-auto max-w-4xl px-6 py-12">
-        <p className="text-xs uppercase tracking-[0.35em] text-amber-400">Submission Link</p>
-        <h1 className="mt-3 text-4xl font-semibold">{details.assignmentTitle}</h1>
-        <p className="mt-3 text-neutral-300">{details.description}</p>
+    <div className="min-h-screen bg-white text-neutral-900">
+      <header className="bg-white">
+        <div className="mx-auto flex max-w-6xl items-center px-8 py-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50">
+              <FileCheck className="h-5 w-5 text-blue-600" />
+            </div>
 
-        <div className="mt-8 rounded-3xl border border-neutral-800 bg-neutral-900/80 p-6">
-          <p className="text-sm text-neutral-400">Student</p>
-          <p className="mt-1 text-lg font-medium">{details.studentName}</p>
-          <div className="mt-5 rounded-2xl bg-neutral-950 p-4">
-            <p className="text-xs uppercase tracking-[0.25em] text-neutral-500">Additional Details</p>
-            <MarkdownPreview content={details.additionalDetails || 'No additional details provided.'} className="mt-2 text-sm text-neutral-300" />
+            <p className="text-[1.65rem] font-medium tracking-tight text-blue-600">
+              AfterProof
+            </p>
           </div>
-          <p className="mt-4 text-sm text-neutral-400">Deadline: {new Date(details.deadline).toLocaleString()}</p>
         </div>
+      </header>
+
+      <main className="mx-auto max-w-5xl px-8 pb-12 pt-6">
+        <section className="rounded-3xl border border-neutral-200 bg-white p-8">
+          <h1 className="text-3xl font-medium tracking-tight text-neutral-900">
+            {details.assignmentTitle}
+          </h1>
+
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-500">
+            {details.description}
+          </p>
+
+          {details.additionalDetails ? 
+          <div className="mt-6 max-w-3xl">
+            <p className="text-xs uppercase tracking-wide text-neutral-500">
+              Additional Details
+            </p>
+            <MarkdownPreview
+              content={details.additionalDetails}
+              className="mt-3 text-sm leading-7 text-neutral-700"
+            />
+          </div>
+          :""
+          }
+
+<div className="mt-6 space-y-4">
+  <div>
+    <p className="text-xs uppercase tracking-wide text-neutral-500">
+      Due
+    </p>
+    <p className="mt-1 text-sm text-neutral-900">
+      {new Date(details.deadline).toLocaleString()}
+    </p>
+  </div>
+
+  <div>
+    <p className="text-xs uppercase tracking-wide text-neutral-500">
+      Student
+    </p>
+    <p className="mt-1 text-sm text-neutral-900">
+      {details.studentName}
+    </p>
+  </div>
+</div>
+        </section>
 
         {details.status === 'pending' ? (
-          <form onSubmit={handleUpload} className="mt-8 rounded-3xl border border-neutral-800 bg-neutral-900/80 p-6">
-            <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-700 px-6 py-10 text-center transition hover:border-amber-400">
+          <form
+            onSubmit={handleUpload}
+            className="mt-8 rounded-3xl border border-neutral-200 bg-white p-8"
+          >
+            <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-300 px-6 py-12 text-center transition hover:border-blue-300 hover:bg-blue-50/30">
               <input
                 type="file"
                 accept=".pdf,.doc,.docx"
                 className="hidden"
                 onChange={(event) => setFile(event.target.files?.[0] || null)}
               />
-              <span className="text-lg font-medium">{file ? file.name : 'Drop in your submission'}</span>
-              <span className="mt-2 text-sm text-neutral-500">PDF or Word file</span>
+
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-50">
+                <Upload className="h-5 w-5 text-blue-600" />
+              </div>
+
+              <span className="mt-4 text-base font-medium text-neutral-900">
+                {file ? file.name : 'Upload your submission'}
+              </span>
+
+              <span className="mt-2 text-sm text-neutral-500">
+                PDF or Word file
+              </span>
             </label>
-            {error ? <p className="mt-4 text-sm text-red-400">{error}</p> : null}
+
+            {error ? (
+              <p className="mt-4 text-sm text-red-500">{error}</p>
+            ) : null}
+
             <button
               type="submit"
               disabled={!file || uploading}
-              className="mt-5 w-full rounded-2xl bg-amber-400 px-4 py-3 font-medium text-neutral-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-300"
+              className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-neutral-300"
             >
-              {uploading ? 'Uploading...' : 'Submit assignment'}
+              {uploading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <ArrowUpFromLine className="h-4 w-4" />
+                  Submit activity
+                </>
+              )}
             </button>
           </form>
         ) : null}
 
-        {details.status === 'analyzing' ? (
-          <div className="mt-8 rounded-3xl border border-amber-900 bg-amber-950/30 p-6">
-            <p className="text-lg font-medium text-amber-300">Preparing your defense session</p>
-            <p className="mt-2 text-sm text-amber-100/70">
-              Defendly is checking whether you understand the submission you turned in.
-            </p>
-            <div className="mt-5 h-3 overflow-hidden rounded-full bg-neutral-950">
-              <div className="h-full w-4/5 rounded-full bg-amber-400 transition-all duration-700" />
-            </div>
-            <div className="mt-5 space-y-2">
-              {analyzingSteps.map((step) => (
-                <div key={step.label} className="flex items-center gap-3 text-sm">
-                  <span className={`h-2.5 w-2.5 rounded-full ${step.complete ? 'bg-amber-400' : 'bg-amber-100/30'}`} />
-                  <span className={step.complete ? 'text-amber-100' : 'text-amber-100/60'}>{step.label}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-      </div>
+{details.status === 'analyzing' ? (
+  <div className="mt-10 flex flex-col items-center justify-center gap-4 text-center">
+    <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+
+    <p className="text-sm text-neutral-600">
+      Preparing your defense session
+    </p>
+  </div>
+) : null}
+      </main>
     </div>
   )
 }

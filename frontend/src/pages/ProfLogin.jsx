@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { FileCheck } from 'lucide-react'
 
 const PROF_EMAIL = 'prof@university.edu'
 const PROF_PASSWORD = 'defendly2024'
@@ -23,57 +24,92 @@ export default function ProfLogin() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-white flex items-center justify-center px-6">
-      <div className="w-full max-w-md">
-        <p className="text-xs uppercase tracking-[0.35em] text-amber-400">Defendly</p>
-        <h1 className="mt-3 text-3xl font-semibold">Professor Login</h1>
+    <div className="min-h-screen bg-white text-neutral-900 flex flex-col">
+      
+      {/* Header */}
+      <header className="bg-white">
+        <div className="mx-auto flex max-w-6xl items-center px-8 py-5">
+          <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-50">
+              <FileCheck className="h-5 w-5 text-blue-600" />
+            </div>
 
-        <form onSubmit={handleLogin} className="mt-10 space-y-6">
-          <div className="border-b border-neutral-700 focus-within:border-amber-400 transition">
+            <p className="text-[1.65rem] font-medium tracking-tight text-blue-600">
+            AfterProof
+            </p>
+          </div>
+        </div>
+      </header>
+
+      {/* Centered Content */}
+      <main className="flex flex-1 items-center justify-center px-8">
+        
+        <div className="w-full max-w-md">
+          
+          {/* Title */}
+          <h1 className="text-3xl font-medium tracking-tight">
+            Instructor Login
+          </h1>
+
+          <p className="mt-2 text-sm text-neutral-500">
+            Sign in to manage activities and review reports
+          </p>
+
+          {/* Form */}
+          <form
+            onSubmit={handleLogin}
+            className="mt-10 space-y-6"
+          >
+            
+            {/* Email */}
             <input
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               placeholder="Email"
-              className="w-full bg-transparent py-3 outline-none placeholder:text-neutral-500"
+              className="w-full border-b border-neutral-300 bg-transparent py-3 text-sm outline-none transition placeholder:text-neutral-400 focus:border-blue-500"
             />
-          </div>
 
-          <div className="border-b border-neutral-700 focus-within:border-amber-400 transition">
+            {/* Password */}
             <input
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               placeholder="Password"
-              className="w-full bg-transparent py-3 outline-none placeholder:text-neutral-500"
+              className="w-full border-b border-neutral-300 bg-transparent py-3 text-sm outline-none transition placeholder:text-neutral-400 focus:border-blue-500"
             />
-          </div>
 
-          {error ? <p className="text-sm text-red-400">{error}</p> : null}
+            {/* Error */}
+            {error ? (
+              <p className="text-sm font-medium text-red-500">{error}</p>
+            ) : null}
 
-          {/* Autofill button - improved placement & styling */}
-          <div className="flex justify-end">
+            {/* Autofill */}
+            <div className="flex justify-between items-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail(PROF_EMAIL)
+                  setPassword(PROF_PASSWORD)
+                  setError('')
+                }}
+                className="cursor-default text-xs font-medium text-blue-600 hover:text-blue-700 transition" >
+                Autofill demo credentials
+              </button>
+            </div>
+
+            {/* Submit */}
             <button
-              type="button"
-              onClick={() => {
-                setEmail(PROF_EMAIL)
-                setPassword(PROF_PASSWORD)
-                setError('')
-              }}
-              className="text-xs text-amber-400 underline underline-offset-4 hover:text-amber-300 transition cursor-pointer"
+              type="submit"
+              className="cursor-default mt-4 rounded-full bg-blue-600 px-6 py-2.5 text-sm font-medium text-white transition hover:bg-blue-700"
             >
-              Autofill demo credentials
+              Sign in
             </button>
-          </div>
 
-          <button
-            type="submit"
-            className="w-full rounded-2xl bg-amber-400 px-4 py-3 font-medium text-neutral-950 transition hover:bg-amber-300 cursor-pointer"
-          >
-            Sign in
-          </button>
-        </form>
-      </div>
+          </form>
+        </div>
+
+      </main>
     </div>
   )
 }
