@@ -105,7 +105,7 @@ router.post('/', async (req, res) => {
       token,
       name: student.name,
       email: student.email,
-      submitUrl: `${process.env.FRONTEND_BASE_URL || 'http://localhost:5173'}/submit/${token}`,
+      submitUrl: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/submit/${token}`,
     }));
 
     console.log(`[assignments] created assignment ${assignmentId}`);
@@ -118,7 +118,7 @@ router.post('/', async (req, res) => {
         await calendar.events.insert({
           calendarId: 'primary',
           requestBody: {
-            summary: `Defendly assignment: ${title}`,
+            summary: `AfterProof assignment: ${title}`,
             description: `Submit your work here: ${invitee.submitUrl}`,
             start: { dateTime: deadline, timeZone: 'UTC' },
             end: { dateTime: deadline, timeZone: 'UTC' },

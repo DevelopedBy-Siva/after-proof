@@ -6,7 +6,7 @@ const PROF = {
 
 const STUDENTS = [
   { name: 'Neo', email: 'developedby.siva@gmail.com' },
-  { name: 'Maximus', email: 'ima.technophyle@gmail.co' },
+  { name: 'Maximus', email: 'ima.technophyle@gmail.com' },
 ];
 
 module.exports = {
